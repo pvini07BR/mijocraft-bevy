@@ -1,16 +1,20 @@
-const INDICES: [u32; 1536] = [0, 1, 2, 2, 3, 0, 4, 5, 6, 6, 7, 4, 8, 9, 10, 10, 11, 8, 12, 13, 14, 14, 15, 12, 16, 17, 18, 18, 19, 16, 20, 21, 22, 22, 23, 20, 24, 25, 26, 26, 27, 24, 28, 29, 30, 30, 31, 28, 32, 33, 34, 34, 35, 32, 36, 37, 38, 38, 39, 36, 40, 41, 42, 42, 43, 40, 44, 45, 46, 46, 47, 44, 48, 49, 50, 50, 51, 48, 52, 53, 54, 54, 55, 52, 56, 57, 58, 58, 59, 56, 60, 61, 62, 62, 63, 60, 64, 65, 66, 66, 67, 64, 68, 69, 70, 70, 71, 68, 72, 73, 74, 74, 75, 72, 76, 77, 78, 78, 79, 76, 80, 81, 82, 82, 83, 80, 84, 85, 86, 86, 87, 84, 88, 89, 90, 90, 91, 88, 92, 93, 94, 94, 95, 92, 96, 97, 98, 98, 99, 96, 100, 101, 102, 102, 103, 100, 104, 105, 106, 106, 107, 104, 108, 109, 110, 110, 111, 108, 112, 113, 114, 114, 115, 112, 116, 117, 118, 118, 119, 116, 120, 121, 122, 122, 123, 120, 124, 125, 126, 126, 127, 124, 128, 129, 130, 130, 131, 128, 132, 133, 134, 134, 135, 132, 136, 137, 138, 138, 139, 136, 140, 141, 142, 142, 143, 140, 144, 145, 146, 146, 147, 144, 148, 149, 150, 150, 151, 148, 152, 153, 154, 154, 155, 152, 156, 157, 158, 158, 159, 156, 160, 161, 162, 162, 163, 160, 164, 165, 166, 166, 167, 164, 168, 169, 170, 170, 171, 168, 172, 173, 174, 174, 175, 172, 176, 177, 178, 178, 179, 176, 180, 181, 182, 182, 183, 180, 184, 185, 186, 186, 187, 184, 188, 189, 190, 190, 191, 188, 192, 193, 194, 194, 195, 192, 196, 197, 198, 198, 199, 196, 200, 201, 202, 202, 203, 200, 204, 205, 206, 206, 207, 204, 208, 209, 210, 210, 211, 208, 212, 213, 214, 214, 215, 212, 216, 217, 218, 218, 219, 216, 220, 221, 222, 222, 223, 220, 224, 225, 226, 226, 227, 224, 228, 229, 230, 230, 231, 228, 232, 233, 234, 234, 235, 232, 236, 237, 238, 238, 239, 236, 240, 241, 242, 242, 243, 240, 244, 245, 246, 246, 247, 244, 248, 249, 250, 250, 251, 248, 252, 253, 254, 254, 255, 252, 256, 257, 258, 258, 259, 256, 260, 261, 262, 262, 263, 260, 264, 265, 266, 266, 267, 264, 268, 269, 270, 270, 271, 268, 272, 273, 274, 274, 275, 272, 276, 277, 278, 278, 279, 276, 280, 281, 282, 282, 283, 280, 284, 285, 286, 286, 287, 284, 288, 289, 290, 290, 291, 288, 292, 293, 294, 294, 295, 292, 296, 297, 298, 298, 299, 296, 300, 301, 302, 302, 303, 300, 304, 305, 306, 306, 307, 304, 308, 309, 310, 310, 311, 308, 312, 313, 314, 314, 315, 312, 316, 317, 318, 318, 319, 316, 320, 321, 322, 322, 323, 320, 324, 325, 326, 326, 327, 324, 328, 329, 330, 330, 331, 328, 332, 333, 334, 334, 335, 332, 336, 337, 338, 338, 339, 336, 340, 341, 342, 342, 343, 340, 344, 345, 346, 346, 347, 344, 348, 349, 350, 350, 351, 348, 352, 353, 354, 354, 355, 352, 356, 357, 358, 358, 359, 356, 360, 361, 362, 362, 363, 360, 364, 365, 366, 366, 367, 364, 368, 369, 370, 370, 371, 368, 372, 373, 374, 374, 375, 372, 376, 377, 378, 378, 379, 376, 380, 381, 382, 382, 383, 380, 384, 385, 386, 386, 387, 384, 388, 389, 390, 390, 391, 388, 392, 393, 394, 394, 395, 392, 396, 397, 398, 398, 399, 396, 400, 401, 402, 402, 403, 400, 404, 405, 406, 406, 407, 404, 408, 409, 410, 410, 411, 408, 412, 413, 414, 414, 415, 412, 416, 417, 418, 418, 419, 416, 420, 421, 422, 422, 423, 420, 424, 425, 426, 426, 427, 424, 428, 429, 430, 430, 431, 428, 432, 433, 434, 434, 435, 432, 436, 437, 438, 438, 439, 436, 440, 441, 442, 442, 443, 440, 444, 445, 446, 446, 447, 444, 448, 449, 450, 450, 451, 448, 452, 453, 454, 454, 455, 452, 456, 457, 458, 458, 459, 456, 460, 461, 462, 462, 463, 460, 464, 465, 466, 466, 467, 464, 468, 469, 470, 470, 471, 468, 472, 473, 474, 474, 475, 472, 476, 477, 478, 478, 479, 476, 480, 481, 482, 482, 483, 480, 484, 485, 486, 486, 487, 484, 488, 489, 490, 490, 491, 488, 492, 493, 494, 494, 495, 492, 496, 497, 498, 498, 499, 496, 500, 501, 502, 502, 503, 500, 504, 505, 506, 506, 507, 504, 508, 509, 510, 510, 511, 508, 512, 513, 514, 514, 515, 512, 516, 517, 518, 518, 519, 516, 520, 521, 522, 522, 523, 520, 524, 525, 526, 526, 527, 524, 528, 529, 530, 530, 531, 528, 532, 533, 534, 534, 535, 532, 536, 537, 538, 538, 539, 536, 540, 541, 542, 542, 543, 540, 544, 545, 546, 546, 547, 544, 548, 549, 550, 550, 551, 548, 552, 553, 554, 554, 555, 552, 556, 557, 558, 558, 559, 556, 560, 561, 562, 562, 563, 560, 564, 565, 566, 566, 567, 564, 568, 569, 570, 570, 571, 568, 572, 573, 574, 574, 575, 572, 576, 577, 578, 578, 579, 576, 580, 581, 582, 582, 583, 580, 584, 585, 586, 586, 587, 584, 588, 589, 590, 590, 591, 588, 592, 593, 594, 594, 595, 592, 596, 597, 598, 598, 599, 596, 600, 601, 602, 602, 603, 600, 604, 605, 606, 606, 607, 604, 608, 609, 610, 610, 611, 608, 612, 613, 614, 614, 615, 612, 616, 617, 618, 618, 619, 616, 620, 621, 622, 622, 623, 620, 624, 625, 626, 626, 627, 624, 628, 629, 630, 630, 631, 628, 632, 633, 634, 634, 635, 632, 636, 637, 638, 638, 639, 636, 640, 641, 642, 642, 643, 640, 644, 645, 646, 646, 647, 644, 648, 649, 650, 650, 651, 648, 652, 653, 654, 654, 655, 652, 656, 657, 658, 658, 659, 656, 660, 661, 662, 662, 663, 660, 664, 665, 666, 666, 667, 664, 668, 669, 670, 670, 671, 668, 672, 673, 674, 674, 675, 672, 676, 677, 678, 678, 679, 676, 680, 681, 682, 682, 683, 680, 684, 685, 686, 686, 687, 684, 688, 689, 690, 690, 691, 688, 692, 693, 694, 694, 695, 692, 696, 697, 698, 698, 699, 696, 700, 701, 702, 702, 703, 700, 704, 705, 706, 706, 707, 704, 708, 709, 710, 710, 711, 708, 712, 713, 714, 714, 715, 712, 716, 717, 718, 718, 719, 716, 720, 721, 722, 722, 723, 720, 724, 725, 726, 726, 727, 724, 728, 729, 730, 730, 731, 728, 732, 733, 734, 734, 735, 732, 736, 737, 738, 738, 739, 736, 740, 741, 742, 742, 743, 740, 744, 745, 746, 746, 747, 744, 748, 749, 750, 750, 751, 748, 752, 753, 754, 754, 755, 752, 756, 757, 758, 758, 759, 756, 760, 761, 762, 762, 763, 760, 764, 765, 766, 766, 767, 764, 768, 769, 770, 770, 771, 768, 772, 773, 774, 774, 775, 772, 776, 777, 778, 778, 779, 776, 780, 781, 782, 782, 783, 780, 784, 785, 786, 786, 787, 784, 788, 789, 790, 790, 791, 788, 792, 793, 794, 794, 795, 792, 796, 797, 798, 798, 799, 796, 800, 801, 802, 802, 803, 800, 804, 805, 806, 806, 807, 804, 808, 809, 810, 810, 811, 808, 812, 813, 814, 814, 815, 812, 816, 817, 818, 818, 819, 816, 820, 821, 822, 822, 823, 820, 824, 825, 826, 826, 827, 824, 828, 829, 830, 830, 831, 828, 832, 833, 834, 834, 835, 832, 836, 837, 838, 838, 839, 836, 840, 841, 842, 842, 843, 840, 844, 845, 846, 846, 847, 844, 848, 849, 850, 850, 851, 848, 852, 853, 854, 854, 855, 852, 856, 857, 858, 858, 859, 856, 860, 861, 862, 862, 863, 860, 864, 865, 866, 866, 867, 864, 868, 869, 870, 870, 871, 868, 872, 873, 874, 874, 875, 872, 876, 877, 878, 878, 879, 876, 880, 881, 882, 882, 883, 880, 884, 885, 886, 886, 887, 884, 888, 889, 890, 890, 891, 888, 892, 893, 894, 894, 895, 892, 896, 897, 898, 898, 899, 896, 900, 901, 902, 902, 903, 900, 904, 905, 906, 906, 907, 904, 908, 909, 910, 910, 911, 908, 912, 913, 914, 914, 915, 912, 916, 917, 918, 918, 919, 916, 920, 921, 922, 922, 923, 920, 924, 925, 926, 926, 927, 924, 928, 929, 930, 930, 931, 928, 932, 933, 934, 934, 935, 932, 936, 937, 938, 938, 939, 936, 940, 941, 942, 942, 943, 940, 944, 945, 946, 946, 947, 944, 948, 949, 950, 950, 951, 948, 952, 953, 954, 954, 955, 952, 956, 957, 958, 958, 959, 956, 960, 961, 962, 962, 963, 960, 964, 965, 966, 966, 967, 964, 968, 969, 970, 970, 971, 968, 972, 973, 974, 974, 975, 972, 976, 977, 978, 978, 979, 976, 980, 981, 982, 982, 983, 980, 984, 985, 986, 986, 987, 984, 988, 989, 990, 990, 991, 988, 992, 993, 994, 994, 995, 992, 996, 997, 998, 998, 999, 996, 1000, 1001, 1002, 1002, 1003, 1000, 1004, 1005, 1006, 1006, 1007, 1004, 1008, 1009, 1010, 1010, 1011, 1008, 1012, 1013, 1014, 1014, 1015, 1012, 1016, 1017, 1018, 1018, 1019, 1016, 1020, 1021, 1022, 1022, 1023, 1020];
-
 pub const TILE_SIZE: usize = 32;
 
 pub const CHUNK_WIDTH: usize = 16;
 pub const CHUNK_AREA: usize = CHUNK_WIDTH*CHUNK_WIDTH;
 
 const VERTICES_PER_BLOCK: usize = 4;
+const INDICES_PER_BLOCK: usize = 6;
 
-use bevy::{math::Vec3A, prelude::*, render::{mesh::{Indices, VertexAttributeValues}, primitives::Aabb, render_asset::RenderAssetUsages, render_resource::PrimitiveTopology}, sprite::{Anchor, MaterialMesh2dBundle, Mesh2dHandle}};
+const CHUNK_MESH_SIZE: usize = CHUNK_AREA * VERTICES_PER_BLOCK;
+const CHUNK_INDEX_COUNT: usize = CHUNK_AREA * INDICES_PER_BLOCK;
+
+pub const AVAILABLE_BLOCKS: usize = 5;
+
+use bevy::{math::Vec3A, prelude::*, render::{mesh::{Indices, PrimitiveTopology}, primitives::Aabb, render_asset::RenderAssetUsages}, sprite::{Anchor, MaterialMesh2dBundle, Mesh2dHandle}};
 use bevy_xpbd_2d::{components::RigidBody, plugins::collision::Collider};
 
-use crate::GameState;
+use crate::{chunk_manager::{get_block, GetBlockSysParam}, utils::{get_index_from_position, get_position_from_index}, world::GameSystemSet};
 
 #[derive(Clone, Copy, Debug, PartialEq)]
 pub enum PlaceMode {
@@ -18,19 +22,20 @@ pub enum PlaceMode {
     BLOCK = 1
 }
 
-#[derive(Component, Debug)]
-pub struct ChunkLayer {
-    pub blocks: [u8; CHUNK_AREA],
-    pub has_collision: bool
-}
-
 #[derive(Component)]
 pub struct Chunk;
 
 #[derive(Component)]
-pub struct BlockRigidbody;
+pub struct ChunkLayer
+{
+    pub blocks: [u8; CHUNK_AREA],
+    pub color: Color
+}
 
-#[derive(Event)]
+#[derive(Component)]
+struct BlockChunkLayer;
+
+#[derive(Event, Debug, Clone, Copy)]
 pub struct PlaceBlock
 {
     pub layer: PlaceMode,
@@ -42,7 +47,17 @@ pub struct PlaceBlock
 #[derive(Event)]
 pub struct SpawnChunk {
     pub position: IVec2,
-    pub place_block: Option<(PlaceMode, u8, UVec2)>
+    pub place_block: Option<PlaceBlock>
+}
+
+#[derive(Event)]
+pub struct RemeshChunk {
+    pub entity: Entity
+}
+
+#[derive(Event)]
+pub struct RecollisionChunk {
+    pub entity: Entity
 }
 
 pub struct ChunkPlugin;
@@ -50,32 +65,42 @@ impl Plugin for ChunkPlugin {
    fn build(&self, app: &mut App) {
         app.add_event::<PlaceBlock>();
         app.add_event::<SpawnChunk>();
-        app.add_systems(Update, (spawn_chunk, place_block).run_if(in_state(GameState::Game)));
+        app.add_event::<RemeshChunk>();
+        app.add_event::<RecollisionChunk>();
+        app.add_systems(Update, (spawn_chunk, set_block, remesh, regenerate_collision).chain().in_set(GameSystemSet::Chunk));
    } 
 }
 
-fn spawn_chunk(
+pub fn spawn_chunk(
+    mut commands: Commands, 
     mut spawn_chunk_ev: EventReader<SpawnChunk>,
     mut place_block_ev: EventWriter<PlaceBlock>,
-    mut commands: Commands, 
     mut meshes: ResMut<Assets<Mesh>>,
-    mut materials: ResMut<Assets<ColorMaterial>>
+    mut materials: ResMut<Assets<ColorMaterial>>,
+    chunk_query: Query<&Transform, With<Chunk>>,
+    asset_server: Res<AssetServer>,
 ) {
-    for ev in spawn_chunk_ev.read() {    
-        let mut block_layer_entity_id: Option<Entity> = None;
-        let mut wall_layer_entity_id: Option<Entity> = None;
+    for ev in spawn_chunk_ev.read() {
+        let pixel_chunk_pos = Vec2::new((ev.position.x as f32 * CHUNK_WIDTH as f32) * TILE_SIZE as f32, (ev.position.y as f32 * CHUNK_WIDTH as f32) * TILE_SIZE as f32);
 
-        commands.spawn(
+        for c_transform in chunk_query.iter() {
+            if c_transform.translation.xy() == pixel_chunk_pos { return; }
+        }
+
+        let chunk_material_handle = materials.add(asset_server.load("textures/blocks.png"));
+        
+        let id = commands.spawn(
             (
                 Name::new("Chunk"),
+                RigidBody::Static,
                 SpriteBundle {
                     sprite: Sprite {
+                        color: Color::rgba(1.0, 1.0, 1.0, 0.0),
                         anchor: Anchor::BottomLeft,
-                        custom_size: Some(Vec2::splat(TILE_SIZE as f32 * CHUNK_WIDTH as f32)),
-                        color: Color::rgba(0.0, 0.0, 0.0, 0.0),
+                        custom_size: Some(Vec2::splat(CHUNK_WIDTH as f32 * TILE_SIZE as f32)),
                         ..default()
                     },
-                    transform: Transform::from_xyz((ev.position.x as f32 * CHUNK_WIDTH as f32) * TILE_SIZE as f32, (ev.position.y as f32 * CHUNK_WIDTH as f32) * TILE_SIZE as f32, 0.0),
+                    transform: Transform::from_xyz(pixel_chunk_pos.x, pixel_chunk_pos.y, 0.0),
                     ..default()
                 },
                 Aabb {
@@ -83,134 +108,272 @@ fn spawn_chunk(
                     half_extents: Vec3A::splat(CHUNK_WIDTH as f32 / 2.0) * TILE_SIZE as f32,
                 },
                 ShowAabbGizmo {..default()},
-                Chunk
+                Chunk,
             )
         ).with_children(|parent| {
-            let mut wall_mesh = Mesh::new(PrimitiveTopology::TriangleList, RenderAssetUsages::default());
-            wall_mesh.insert_attribute(Mesh::ATTRIBUTE_POSITION, vec![[0., 0., 0.]; CHUNK_AREA * VERTICES_PER_BLOCK]);
-            wall_mesh.insert_indices(Indices::U32(INDICES.to_vec()));
-
-            wall_layer_entity_id = Some(parent.spawn(
-                (
-                    Name::new("Wall Layer"),
-                    MaterialMesh2dBundle {
-                        mesh: meshes.add(wall_mesh).into(),
-                        material: materials.add(ColorMaterial::from(Color::rgb(0.5, 0.5, 0.5))),
-                        transform: Transform::from_xyz(0.0, 0.0, 0.0),
-                        ..default()
-                    },
-                    Aabb {
-                        center: Vec3A::splat(CHUNK_WIDTH as f32 / 2.0) * TILE_SIZE as f32,
-                        half_extents: Vec3A::splat(CHUNK_WIDTH as f32 / 2.0) * TILE_SIZE as f32,
-                    },
-                    ChunkLayer { blocks: [0; CHUNK_AREA], has_collision: false },
-                )
-            ).id());
-
-            let mut block_mesh = Mesh::new(PrimitiveTopology::TriangleList, RenderAssetUsages::default());
-            block_mesh.insert_attribute(Mesh::ATTRIBUTE_POSITION, vec![[0., 0., 0.]; CHUNK_AREA * VERTICES_PER_BLOCK]);
-            block_mesh.insert_indices(Indices::U32(INDICES.to_vec()));
-
-            block_layer_entity_id = Some(parent.spawn(
-                (
-                    Name::new("Block Layer"),
-                    MaterialMesh2dBundle {
-                        mesh: meshes.add(block_mesh).into(),
-                        material: materials.add(ColorMaterial::default()),
-                        transform: Transform::from_xyz(0.0, 0.0, 1.0),
-                        ..default()
-                    },
-                    Aabb {
-                        center: Vec3A::splat(CHUNK_WIDTH as f32 / 2.0) * TILE_SIZE as f32,
-                        half_extents: Vec3A::splat(CHUNK_WIDTH as f32 / 2.0) * TILE_SIZE as f32,
-                    },
-                    ChunkLayer { blocks: [0; CHUNK_AREA], has_collision: true }
-                )
-            ).id());
-        });
-
-        if let Some((layer, id, pos)) = ev.place_block {
-            match layer {
-                PlaceMode::BLOCK => {
-                    if let Some(entity) = block_layer_entity_id {
-                        place_block_ev.send(PlaceBlock { layer: layer, position: pos, id: id, entity: entity });
-                    }
+            parent.spawn((
+                Name::new("Chunk Wall Layer"),
+                ChunkLayer { blocks: [0; CHUNK_AREA], color: Color::rgba(0.25, 0.25, 0.25, 1.0) },
+                MaterialMesh2dBundle {
+                    mesh: meshes.add(generate_chunk_layer_mesh()).into(),
+                    material: chunk_material_handle.clone(),
+                    transform: Transform::from_xyz(0.0, 0.0, -1.0),
+                    ..default()
                 },
-                PlaceMode::WALL => {
-                    if let Some(entity) = wall_layer_entity_id {
-                        place_block_ev.send(PlaceBlock { layer: layer, position: pos, id: id, entity: entity });
-                    }
-                }
-            }
+                Aabb {
+                    center: Vec3A::splat(CHUNK_WIDTH as f32 / 2.0) * TILE_SIZE as f32,
+                    half_extents: Vec3A::splat(CHUNK_WIDTH as f32 / 2.0) * TILE_SIZE as f32,
+                },
+            ));
+
+            parent.spawn((
+                Name::new("Chunk Block Layer"),
+                ChunkLayer { blocks: [0; CHUNK_AREA], color: Color::WHITE },
+                MaterialMesh2dBundle {
+                    mesh: meshes.add(generate_chunk_layer_mesh()).into(),
+                    material: chunk_material_handle,
+                    transform: Transform::from_xyz(0.0, 0.0, 0.0),
+                    ..default()
+                },
+                Aabb {
+                    center: Vec3A::splat(CHUNK_WIDTH as f32 / 2.0) * TILE_SIZE as f32,
+                    half_extents: Vec3A::splat(CHUNK_WIDTH as f32 / 2.0) * TILE_SIZE as f32,
+                },
+                BlockChunkLayer
+            ));
+        }).id();
+
+        if let Some(mut p) = ev.place_block {
+            p.entity = id;
+            place_block_ev.send(p);
         }
     }
-
 }
 
-fn place_block(
-    mut commands: Commands,
+fn set_block(
+    mut chunk_query: Query<(&Children, Entity), With<Chunk>>,
+    mut chunk_layer_query: Query<&mut ChunkLayer>,
     mut place_block_ev: EventReader<PlaceBlock>,
-    mut chunk_query: Query<(&Mesh2dHandle, &mut ChunkLayer)>,
-    block_rigidbody_query: Query<(&Transform, Entity), With<BlockRigidbody>>,
-    mut mesh_res: ResMut<Assets<Mesh>>,
+    mut remesh_chunk_ev: EventWriter<RemeshChunk>,
+    mut recol_chunk_ev: EventWriter<RecollisionChunk>
 ) {
     for ev in place_block_ev.read()
     {
-        if ev.position.x < CHUNK_WIDTH as u32 && ev.position.y < CHUNK_WIDTH as u32 {
-            if let Ok((mesh_handle, mut chunk_layer)) = chunk_query.get_mut(ev.entity) {
-                if let Some(mesh) = mesh_res.get_mut(mesh_handle.0.id()) {
-                    if let Some(data) = mesh.attribute_mut(Mesh::ATTRIBUTE_POSITION) {
-                        if let VertexAttributeValues::Float32x3(d) = data {
-                            let index: usize = ev.position.x as usize + (ev.position.y as usize * CHUNK_WIDTH as usize);
-                            let i = index * VERTICES_PER_BLOCK as usize;
-                            
-                            if ev.id > 0 {
-                                if chunk_layer.blocks[index] == 0 {
-                                    d[i    ] = [(ev.position.x as f32 * TILE_SIZE as f32)                   , (ev.position.y as f32 * TILE_SIZE as f32)                   , 0.0];
-                                    d[i + 1] = [(ev.position.x as f32 * TILE_SIZE as f32) + TILE_SIZE as f32, (ev.position.y as f32 * TILE_SIZE as f32)                   , 0.0];
-                                    d[i + 2] = [(ev.position.x as f32 * TILE_SIZE as f32) + TILE_SIZE as f32, (ev.position.y as f32 * TILE_SIZE as f32) + TILE_SIZE as f32, 0.0];
-                                    d[i + 3] = [(ev.position.x as f32 * TILE_SIZE as f32)                   , (ev.position.y as f32 * TILE_SIZE as f32) + TILE_SIZE as f32, 0.0];
+        if let Ok((children, _)) = chunk_query.get_mut(ev.entity) {
+            chunk_layer_query.get_mut(children[ev.layer as usize]).unwrap().blocks[get_index_from_position(ev.position)] = ev.id;
+
+            for (_, entity) in chunk_query.iter() {
+                remesh_chunk_ev.send(RemeshChunk { entity });
+                recol_chunk_ev.send(RecollisionChunk { entity });
+            }
+        }
+    }
+}
+
+fn remesh(
+    mut remesh_chunk_ev: EventReader<RemeshChunk>,
+    chunk_query: Query<(&Children, &Transform), With<Chunk>>,
+    chunk_layer_query: Query<(&ChunkLayer, &Mesh2dHandle)>,
+    mut sys_param: GetBlockSysParam<'_, '_>,
+    mut meshes: ResMut<Assets<Mesh>>,
+    block_layer_q: Query<&ChunkLayer, With<BlockChunkLayer>>
+) {
+    for ev in remesh_chunk_ev.read() {
+        let (chunk_children, chunk_transform) = chunk_query.get(ev.entity).unwrap();
+
+        for ci in 0..chunk_children.len() {
+            if let Ok((chunk_layer, layer_mesh)) = chunk_layer_query.get(chunk_children[ci]) {
+                let mesh = meshes.get_mut(layer_mesh.0.id()).unwrap();
+
+                let mut vertex_positions: Vec<[f32; 3]> = Vec::with_capacity(CHUNK_MESH_SIZE);
+                for _ in 0..CHUNK_MESH_SIZE { vertex_positions.push([0.0, 0.0, 0.0]); }
+            
+                let mut vertex_colors: Vec<[f32; 4]> = Vec::with_capacity(CHUNK_MESH_SIZE);
+                for _ in 0..CHUNK_MESH_SIZE { vertex_colors.push([0.0, 0.0, 0.0, 0.0]); }
     
-                                    if chunk_layer.has_collision {
-                                        commands.entity(ev.entity).with_children(|parent| {
-                                            parent.spawn(
-                                                (
-                                                    Name::new("Block RigidBody"),
-                                                    Transform::from_xyz((ev.position.x as f32 * TILE_SIZE as f32) + (TILE_SIZE as f32 / 2.0), (ev.position.y as f32 * TILE_SIZE as f32) + (TILE_SIZE as f32 / 2.0), 0.0),
-                                                    RigidBody::Static,
-                                                    Collider::rectangle(TILE_SIZE as f32, TILE_SIZE as f32),
-                                                    BlockRigidbody
-                                                )
-                                            );
-                                        });
-                                    }
+                let mut vertex_uvs: Vec<[f32; 2]> = Vec::with_capacity(CHUNK_MESH_SIZE);
+                for _ in 0..CHUNK_MESH_SIZE { vertex_uvs.push([0.0, 0.0]); }
 
-                                    chunk_layer.blocks[index] = ev.id;
+                let mut indices: Vec<u32> = generate_chunk_indices();
+    
+                for i in 0..CHUNK_AREA {
+                    let position = get_position_from_index(i);
+        
+                    if chunk_layer.blocks[i] > 0 {
+                        // Positions
+                        vertex_positions[i * VERTICES_PER_BLOCK    ] = [position.x as f32 * TILE_SIZE as f32,                    position.y as f32 * TILE_SIZE as f32,                    0.0];
+                        vertex_positions[i * VERTICES_PER_BLOCK + 1] = [position.x as f32 * TILE_SIZE as f32 + TILE_SIZE as f32, position.y as f32 * TILE_SIZE as f32,                    0.0];
+                        vertex_positions[i * VERTICES_PER_BLOCK + 2] = [position.x as f32 * TILE_SIZE as f32 + TILE_SIZE as f32, position.y as f32 * TILE_SIZE as f32 + TILE_SIZE as f32, 0.0];
+                        vertex_positions[i * VERTICES_PER_BLOCK + 3] = [position.x as f32 * TILE_SIZE as f32,                    position.y as f32 * TILE_SIZE as f32 + TILE_SIZE as f32, 0.0];
+    
+                        // Vertex Colors
+                        vertex_colors[i * VERTICES_PER_BLOCK    ] = chunk_layer.color.as_rgba_f32();
+                        vertex_colors[i * VERTICES_PER_BLOCK + 1] = chunk_layer.color.as_rgba_f32();
+                        vertex_colors[i * VERTICES_PER_BLOCK + 2] = chunk_layer.color.as_rgba_f32();
+                        vertex_colors[i * VERTICES_PER_BLOCK + 3] = chunk_layer.color.as_rgba_f32();
+    
+                        // Set block UVs
+                        vertex_uvs[i * VERTICES_PER_BLOCK    ] = [(1.0 / AVAILABLE_BLOCKS as f32) * (chunk_layer.blocks[i] - 1) as f32, 1.0];
+                        vertex_uvs[i * VERTICES_PER_BLOCK + 1] = [(1.0 / AVAILABLE_BLOCKS as f32) *  chunk_layer.blocks[i] as f32,       1.0];
+                        vertex_uvs[i * VERTICES_PER_BLOCK + 2] = [(1.0 / AVAILABLE_BLOCKS as f32) *  chunk_layer.blocks[i] as f32,       0.0];
+                        vertex_uvs[i * VERTICES_PER_BLOCK + 3] = [(1.0 / AVAILABLE_BLOCKS as f32) * (chunk_layer.blocks[i] - 1) as f32, 0.0];
+
+                        // Ambient Occlusion
+                        if ci == 0 {
+                            if let Ok(block_layer) = block_layer_q.get(chunk_children[PlaceMode::BLOCK as usize]) {
+                                const AO_COLOR: [f32; 4] = [0.1, 0.1, 0.1, 1.0];
+    
+                                let chunk_position = IVec2::new(
+                                    (chunk_transform.translation.x as i32 / CHUNK_WIDTH as i32) / TILE_SIZE as i32,
+                                    (chunk_transform.translation.y as i32 / CHUNK_WIDTH as i32) / TILE_SIZE as i32
+                                );
+        
+                                let int_pos = IVec2::new(position.x as i32, position.y as i32);
+        
+                                // Sides
+
+                                // Up
+                                let up = get_block(&mut sys_param, int_pos + IVec2::Y, chunk_position, PlaceMode::BLOCK, &block_layer.blocks);
+                                if up > 0 && up != 5 {
+                                    vertex_colors[i * VERTICES_PER_BLOCK + 2] = AO_COLOR;
+                                    vertex_colors[i * VERTICES_PER_BLOCK + 3] = AO_COLOR;
                                 }
-                            } else {
-                                if chunk_layer.blocks[index] != 0 {
-                                    d[i    ] = [0.0, 0.0, 0.0];
-                                    d[i + 1] = [0.0, 0.0, 0.0];
-                                    d[i + 2] = [0.0, 0.0, 0.0];
-                                    d[i + 3] = [0.0, 0.0, 0.0];
 
-                                    if chunk_layer.has_collision {
-                                        for (transform, entity) in block_rigidbody_query.iter()
-                                        {
-                                            let block_pos = Vec2::new((ev.position.x as f32 * TILE_SIZE as f32) + (TILE_SIZE as f32 / 2.0), (ev.position.y as f32 * TILE_SIZE as f32) + (TILE_SIZE as f32 / 2.0));
-                                            if transform.translation.xy() == block_pos {
-                                                commands.entity(entity).despawn();
-                                            }
-                                        }
-                                    }
-                                    
-                                    chunk_layer.blocks[index] = 0;
+                                // Right
+                                let right = get_block(&mut sys_param, int_pos + IVec2::X, chunk_position, PlaceMode::BLOCK, &block_layer.blocks);
+                                if right > 0 && right != 5 {
+                                    vertex_colors[i * VERTICES_PER_BLOCK + 1] = AO_COLOR;
+                                    vertex_colors[i * VERTICES_PER_BLOCK + 2] = AO_COLOR;
+                                }
+
+                                // Down
+                                let down = get_block(&mut sys_param, int_pos + IVec2::NEG_Y, chunk_position, PlaceMode::BLOCK, &block_layer.blocks);
+                                if down > 0 && down != 5 {
+                                    vertex_colors[i * VERTICES_PER_BLOCK + 0] = AO_COLOR;
+                                    vertex_colors[i * VERTICES_PER_BLOCK + 1] = AO_COLOR;
+                                }
+
+                                // Left
+                                let left = get_block(&mut sys_param, int_pos + IVec2::NEG_X, chunk_position, PlaceMode::BLOCK, &block_layer.blocks);
+                                if left > 0 && left != 5 {
+                                    vertex_colors[i * VERTICES_PER_BLOCK + 0] = AO_COLOR;
+                                    vertex_colors[i * VERTICES_PER_BLOCK + 3] = AO_COLOR;
+                                }
+
+                                // Corners
+
+                                // Bottom Left
+                                let bl = get_block(&mut sys_param, int_pos + IVec2::NEG_ONE, chunk_position, PlaceMode::BLOCK, &block_layer.blocks);
+                                if bl > 0 && bl != 5 {
+                                    vertex_colors[i * VERTICES_PER_BLOCK + 0] = AO_COLOR;
+                                    flip_quad(i, &mut indices);
+                                }
+
+                                // Bottom Right
+                                let br = get_block(&mut sys_param, int_pos + IVec2::new(1, -1), chunk_position, PlaceMode::BLOCK, &block_layer.blocks);
+                                if br > 0 && br != 5 {
+                                    vertex_colors[i * VERTICES_PER_BLOCK + 1] = AO_COLOR;
+                                }
+
+                                // Top Right
+                                let tr = get_block(&mut sys_param, int_pos + IVec2::ONE, chunk_position, PlaceMode::BLOCK, &block_layer.blocks);
+                                if tr > 0 && tr != 5 {
+                                    vertex_colors[i * VERTICES_PER_BLOCK + 2] = AO_COLOR;
+                                    flip_quad(i, &mut indices);
+                                }
+
+                                // Top Left
+                                let tl = get_block(&mut sys_param, int_pos + IVec2::new(-1, 1), chunk_position, PlaceMode::BLOCK, &block_layer.blocks);
+                                if tl > 0 && tl != 5 {
+                                    vertex_colors[i * VERTICES_PER_BLOCK + 3] = AO_COLOR;
                                 }
                             }
                         }
                     }
                 }
+    
+                mesh.insert_attribute(Mesh::ATTRIBUTE_POSITION, vertex_positions);
+                mesh.insert_attribute(Mesh::ATTRIBUTE_COLOR, vertex_colors);
+                mesh.insert_attribute(Mesh::ATTRIBUTE_UV_0, vertex_uvs);
+                mesh.insert_indices(Indices::U32(indices));
             }
         }
     }
+}
+
+fn regenerate_collision(
+    mut commands: Commands,
+    mut recol_chunk_ev: EventReader<RecollisionChunk>,
+    chunk_query: Query<&Children, With<Chunk>>,
+    chunk_layer_query: Query<&ChunkLayer>,
+    collider_query: Query<Entity, With<Collider>>
+) {
+    for ev in recol_chunk_ev.read() {
+        let children = chunk_query.get(ev.entity).unwrap();
+        for c in children.iter() {
+            if collider_query.contains(*c) {
+                commands.entity(*c).despawn();
+            }
+        }
+        let block_chunk_layer = chunk_layer_query.get(children[PlaceMode::BLOCK as usize]).unwrap();
+
+        for i in 0..CHUNK_AREA {
+            if block_chunk_layer.blocks[i] > 0 {
+                let pos = get_position_from_index(i);
+                let pixel_pos = Vec2::new(pos.x as f32 * TILE_SIZE as f32, pos.y as f32 * TILE_SIZE as f32);
+
+                commands.spawn(
+                    (
+                        Name::new("Chunk collider shape"),
+                        Collider::rectangle(TILE_SIZE as f32, TILE_SIZE as f32),
+                        TransformBundle::from_transform(Transform::from_xyz((TILE_SIZE as f32 / 2.0) + pixel_pos.x, (TILE_SIZE as f32 / 2.0) + pixel_pos.y, 0.0))
+                    )
+                ).set_parent(ev.entity);
+            }
+        }
+    }
+}
+
+fn generate_chunk_layer_mesh() -> Mesh
+{
+    let mut mesh_vec: Vec<[f32; 3]> = Vec::with_capacity(CHUNK_MESH_SIZE);
+    for _ in 0..CHUNK_MESH_SIZE { mesh_vec.push([0.0, 0.0, 0.0]); }
+
+    Mesh::new(PrimitiveTopology::TriangleList, RenderAssetUsages::default())
+        .with_inserted_attribute(Mesh::ATTRIBUTE_POSITION, mesh_vec)
+        .with_inserted_indices(Indices::U32(generate_chunk_indices()))
+}
+
+fn generate_chunk_indices() -> Vec<u32>
+{
+    let mut vec: Vec<u32> = vec![0; CHUNK_INDEX_COUNT];
+
+    let mut offset: usize = 0;
+    for i in (0..CHUNK_INDEX_COUNT).step_by(6)
+    {
+        vec[i + 0] = 0 + offset as u32;
+        vec[i + 1] = 1 + offset as u32;
+        vec[i + 2] = 2 + offset as u32;
+
+        vec[i + 3] = 2 + offset as u32;
+        vec[i + 4] = 3 + offset as u32;
+        vec[i + 5] = 0 + offset as u32;
+
+        offset += 4;
+    }
+
+    return vec;
+}
+
+fn flip_quad(quad_index: usize, indices: &mut Vec<u32>) {
+    let i = quad_index * INDICES_PER_BLOCK;
+    let offset = quad_index * 4;
+
+    indices[i + 0] = 0 + offset as u32;
+    indices[i + 1] = 1 + offset as u32;
+    indices[i + 2] = 3 + offset as u32;
+
+    indices[i + 3] = 1 + offset as u32;
+    indices[i + 4] = 2 + offset as u32;
+    indices[i + 5] = 3 + offset as u32;
 }

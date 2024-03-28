@@ -1,4 +1,4 @@
-use crate::chunk::{self, PlaceMode, CHUNK_WIDTH, TILE_SIZE};
+use crate::chunk::{self, PlaceMode, AVAILABLE_BLOCKS, CHUNK_WIDTH, TILE_SIZE};
 use crate::chunk_manager::{ChunkManagerPlugin, TryPlaceBlock};
 
 use crate::player::{Player, PlayerPlugin};
@@ -8,13 +8,28 @@ use crate::{utils::*, GameState};
 use bevy::{input::mouse::MouseWheel, prelude::*, sprite::SpriteBundle, window::PrimaryWindow};
 use bevy_xpbd_2d::{prelude::*, SubstepSchedule, SubstepSet};
 
+#[derive(SystemSet, Debug, Clone, PartialEq, Eq, Hash)]
+pub enum GameSystemSet {
+    Chunk,
+    ChunkManager,
+    Player,
+    World
+}
+
 #[derive(Component)]
 struct BlockCursor {
+    block_index: u8,
     layer: PlaceMode,
-    block_position: Vec2,
-    relative_position: Vec2,
-    chunk_position: Vec2
+    block_position: IVec2,
+    relative_position: UVec2,
+    chunk_position: IVec2
 }
+
+#[derive(Component)]
+struct CursorBlockIcon;
+
+#[derive(Component)]
+struct CursorPlaceModeIcon;
 
 #[derive(Component)]
 struct FromWorld;
@@ -24,23 +39,47 @@ pub struct WorldPlugin;
 impl Plugin for WorldPlugin {
     fn build(&self, app: &mut App) {
         app.insert_resource(Gravity(Vec2::NEG_Y * (9.81 * TILE_SIZE as f32)))
-           .add_plugins(ChunkManagerPlugin)
-           .add_plugins(PlayerPlugin)
-           .add_systems(OnEnter(GameState::Game), setup)
-           .add_systems(Update, 
+            .add_plugins(ChunkManagerPlugin)
+            .add_plugins(PlayerPlugin)
+
+            .configure_sets(OnEnter(GameState::Game), (
+                GameSystemSet::Chunk,
+                GameSystemSet::ChunkManager,
+                GameSystemSet::Player,
+                GameSystemSet::World
+            ).chain().run_if(in_state(GameState::Game)))
+
+            .configure_sets(Update, (
+                GameSystemSet::ChunkManager,
+                GameSystemSet::Chunk,
+                GameSystemSet::World,
+                GameSystemSet::Player
+            ).chain().run_if(in_state(GameState::Game)))
+
+            .add_systems(OnEnter(GameState::Game), (set_clear_color, setup, places).chain().in_set(GameSystemSet::World))
+            .add_systems(Update, 
                (
-                   update_cursor,
-                   block_input,
-                   switch_place_mode,
-                   camera_zoom
-               ).run_if(in_state(GameState::Game)))
-           .add_systems(SubstepSchedule, camera_follow_player.in_set(SubstepSet::ApplyTranslation).run_if(in_state(GameState::Game)))
-           ;
+                    update_cursor,
+                    block_input,
+                    switch_place_mode,
+                    mouse_scroll_input
+                ).in_set(GameSystemSet::World))
+            .add_systems(SubstepSchedule, camera_follow_player.in_set(SubstepSet::ApplyTranslation).run_if(in_state(GameState::Game)))
+            ;
     }
 }
 
+fn set_clear_color(
+    mut camera_q: Query<&mut Camera>
+) {
+    let mut camera = camera_q.single_mut();
+    camera.clear_color = ClearColorConfig::Custom(Color::rgb(0.48, 0.48, 0.67));
+}
+
 fn setup(
-    mut commands: Commands
+    mut commands: Commands,
+    asset_server: Res<AssetServer>,
+    mut texture_atlas_layouts: ResMut<Assets<TextureAtlasLayout>>
 ) {
     commands.spawn((
         Name::new("Cursor"),
@@ -51,38 +90,91 @@ fn setup(
                 anchor: bevy::sprite::Anchor::BottomLeft,
                 ..default()
             },
-            transform: Transform::from_translation(Vec3::new(0.0, 0.0, 0.0)),
+            transform: Transform::from_translation(Vec3::new(0.0, 0.0, 2.0)),
             visibility: Visibility::Hidden,
             ..default()
         },
-        BlockCursor { 
+        BlockCursor {
+            block_index: 1,
             layer: PlaceMode::BLOCK,
-            block_position: Vec2::ZERO,
-            chunk_position: Vec2::ZERO,
-            relative_position: Vec2::ZERO
+            block_position: IVec2::ZERO,
+            chunk_position: IVec2::ZERO,
+            relative_position: UVec2::ZERO
         },
         FromWorld
     ));
+
+    let layout = TextureAtlasLayout::from_grid(Vec2::splat(TILE_SIZE as f32), AVAILABLE_BLOCKS, 1, None, None);
+
+    commands.spawn((
+        Name::new("Block Indicator"),
+        SpriteSheetBundle {
+            texture: asset_server.load("textures/blocks.png"),
+            atlas: TextureAtlas {
+                layout: texture_atlas_layouts.add(layout),
+                index: 0
+            },
+            sprite: Sprite {
+                custom_size: Some(Vec2::splat(TILE_SIZE as f32 * 0.75)),
+                anchor: bevy::sprite::Anchor::TopLeft,
+                ..default()
+            },
+            transform: Transform::from_translation(Vec3::new(0.0, 0.0, 3.0)),
+            visibility: Visibility::Hidden,
+            ..default()
+        },
+        CursorBlockIcon,
+        FromWorld
+    )).with_children(|parent| {
+        let new_layout = TextureAtlasLayout::from_grid(Vec2::splat(8.0), 2, 1, None, None);
+
+        parent.spawn((SpriteSheetBundle {
+                texture: asset_server.load("textures/place_modes.png"),
+                atlas: TextureAtlas {
+                    layout: texture_atlas_layouts.add(new_layout),
+                    index: 1
+                },
+                sprite: Sprite {
+                    custom_size: Some(Vec2::splat(16.0)),
+                    ..default()
+                },
+                transform: Transform::from_translation(Vec3::new(TILE_SIZE as f32 * 0.75, -(TILE_SIZE as f32 * 0.75), 4.0)),
+                ..default()
+            },
+            CursorPlaceModeIcon
+        ));
+    });
+}
+
+fn places(mut try_place_block_ev: EventWriter<TryPlaceBlock>) {
+    try_place_block_ev.send(TryPlaceBlock {
+        position: IVec2::new(0, 0),
+        layer: PlaceMode::BLOCK,
+        id: 1
+    });
 }
 
 fn block_input(
-    cursor_q: Query<(&Transform, &BlockCursor)>,
+    cursor_q: Query<&BlockCursor>,
     player_query: Query<&Transform, With<Player>>,
     mouse_button_input: Res<ButtonInput<MouseButton>>,
     mut try_place_block_ev: EventWriter<TryPlaceBlock>
 ) {
-    if let Ok((cursor_transform, cursor)) = cursor_q.get_single() {
-        if let Ok(player_transform) = player_query.get_single() {
-            let player_to_block_pixel_pos = (player_transform.translation / TILE_SIZE as f32).floor() * TILE_SIZE as f32;
-            if player_to_block_pixel_pos != cursor_transform.translation || cursor.layer == PlaceMode::WALL {
-                if mouse_button_input.just_pressed(MouseButton::Right) {
-                    try_place_block_ev.send(TryPlaceBlock { layer: cursor.layer, position: Vec2::new(cursor_transform.translation.x, cursor_transform.translation.y), id: 1 });
-                }
-            }
-            if mouse_button_input.just_pressed(MouseButton::Left) {
-                try_place_block_ev.send(TryPlaceBlock { layer: cursor.layer, position: Vec2::new(cursor_transform.translation.x, cursor_transform.translation.y), id: 0 });
-            }
+    let cursor = cursor_q.single();
+    let player_transform = player_query.single();
+
+    let player_position = IVec2::new(
+        (player_transform.translation.x / TILE_SIZE as f32).floor() as i32,
+        (player_transform.translation.y / TILE_SIZE as f32).floor() as i32,
+    );
+
+    if player_position != cursor.block_position || cursor.layer == PlaceMode::WALL {
+        if mouse_button_input.just_pressed(MouseButton::Right) {
+            try_place_block_ev.send(TryPlaceBlock { layer: cursor.layer, position: cursor.block_position, id: cursor.block_index });
         }
+    }
+    if mouse_button_input.just_pressed(MouseButton::Left) {
+        try_place_block_ev.send(TryPlaceBlock { layer: cursor.layer, position: cursor.block_position, id: 0 });
     }
 }
 
@@ -98,9 +190,11 @@ fn camera_follow_player(
     }
 }
 
-fn camera_zoom(
+fn mouse_scroll_input(
     keyboard_input: Res<ButtonInput<KeyCode>>,
     mut camera_query: Query<&mut Transform, With<Camera2d>>,
+    mut cursor_query: Query<&mut BlockCursor>,
+    mut cursor_block_icon_q: Query<&mut TextureAtlas, With<CursorBlockIcon>>,
     mut mouse_scroll_event: EventReader<MouseWheel>
 ) {
     const CAMERA_MIN_ZOOM: f32 = 0.05;
@@ -120,48 +214,76 @@ fn camera_zoom(
                     camera_transform.scale += Vec3::splat(0.05);
                 }
             }
+        } else {
+            let mut cursor = cursor_query.single_mut();
+            if ev.y > 0.0 { // Scrolling up
+                if cursor.block_index < AVAILABLE_BLOCKS as u8 {
+                    cursor.block_index += 1;
+                }
+            } else if ev.y < 0.0 { // Scrolling down
+                if cursor.block_index > 1 {
+                    cursor.block_index -= 1;
+                }
+            }
+
+            let mut icon_tex_atlas = cursor_block_icon_q.single_mut();
+            icon_tex_atlas.index = cursor.block_index as usize - 1;
         }
     }
 }
 
 fn update_cursor(
     window_query: Query<&Window, With<PrimaryWindow>>,
-    mut cursor_q: Query<(&mut Transform, &mut BlockCursor, &mut Visibility)>,
-    camera_q: Query<(&Camera, &GlobalTransform)>
+    mut cursor_q: Query<(&mut Transform, &mut BlockCursor, &mut Sprite, &mut Visibility)>,
+    mut cursor_block_icon_q: Query<(&mut Transform, &mut Visibility), (With<CursorBlockIcon>, Without<BlockCursor>)>,
+    camera_q: Query<(&Camera, &GlobalTransform)>,
+    time: Res<Time>
 ) {
-    let window = window_query.get_single().unwrap();
-    let (mut cursor_transform, mut cursor, mut visibility) = cursor_q.single_mut();
-    let (camera, camera_global_transform) = camera_q.single();
-
-    if let Some(world_position) = window
-        .cursor_position()
-        .and_then(|cursor| camera.viewport_to_world_2d(camera_global_transform, cursor))
-    {
-        *visibility = Visibility::Visible;
-
-        cursor.block_position = (world_position / chunk::TILE_SIZE as f32).floor();
-        let g = cursor.block_position * TILE_SIZE as f32;
-        cursor_transform.translation = Vec3::new(g.x, g.y, 0.0);
-
-        cursor.chunk_position = (cursor.block_position / CHUNK_WIDTH as f32).floor();
-        cursor.relative_position = (cursor.chunk_position * CHUNK_WIDTH as f32) - cursor.block_position;
-    } else {
-        *visibility = Visibility::Hidden;
+    if let Ok(window) = window_query.get_single() {
+        let (mut cursor_transform, mut cursor, mut cursor_sprite, mut cursor_visibility) = cursor_q.single_mut();
+        let (mut cursor_icon_transform, mut cursor_icon_visibility) = cursor_block_icon_q.single_mut();
+        let (camera, camera_global_transform) = camera_q.single();
+    
+        cursor_sprite.color = Color::rgba(cursor_sprite.color.r(), cursor_sprite.color.g(), cursor_sprite.color.b(), (f32::sin(time.elapsed_seconds() * 4.0) / 4.0) + 0.25);
+    
+        if let Some(world_position) = window
+            .cursor_position()
+            .and_then(|cursor| camera.viewport_to_world_2d(camera_global_transform, cursor))
+        {
+            *cursor_visibility = Visibility::Visible;
+            *cursor_icon_visibility = Visibility::Visible;
+    
+            cursor_icon_transform.translation = Vec3::new(world_position.x, world_position.y, cursor_icon_transform.translation.z);
+    
+            cursor.block_position = IVec2::new((world_position.x as f32 / chunk::TILE_SIZE as f32).floor() as i32, (world_position.y as f32 / chunk::TILE_SIZE as f32).floor() as i32);
+            let g = Vec2::new(cursor.block_position.x as f32, cursor.block_position.y as f32) * TILE_SIZE as f32;
+            cursor_transform.translation = Vec3::new(g.x, g.y, cursor_transform.translation.z);
+    
+            cursor.chunk_position = IVec2::new((cursor.block_position.x as f32 * CHUNK_WIDTH as f32).floor() as i32, (cursor.block_position.y as f32 * CHUNK_WIDTH as f32).floor() as i32);
+            let v = (cursor.chunk_position * CHUNK_WIDTH as i32) - cursor.block_position;
+            cursor.relative_position = UVec2::new(v.x as u32, v.y as u32);
+        } else {
+            *cursor_visibility = Visibility::Hidden;
+            *cursor_icon_visibility = Visibility::Hidden;
+        }
     }
 }
 
 fn switch_place_mode(
     mut cursor_q: Query<&mut BlockCursor>,
+    mut cursor_placemode_icon_q: Query<&mut TextureAtlas, With<CursorPlaceModeIcon>>,
     keyboard_input: Res<ButtonInput<KeyCode>>
 ) {
-    let mut cursor = cursor_q.single_mut();
     if keyboard_input.just_pressed(KeyCode::Tab) {
+        let mut cursor = cursor_q.single_mut();
+        let mut place_mode_texture_atlas = cursor_placemode_icon_q.single_mut();
+
         if cursor.layer == PlaceMode::WALL {
             cursor.layer = PlaceMode::BLOCK;
         } else if cursor.layer == PlaceMode::BLOCK {
             cursor.layer = PlaceMode::WALL;
         }
 
-        println!("{:?}", cursor.layer);
+        place_mode_texture_atlas.index = cursor.layer as usize;
     }
 }

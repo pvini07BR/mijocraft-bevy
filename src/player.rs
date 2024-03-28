@@ -3,7 +3,7 @@ use std::f32::consts::FRAC_PI_2;
 use bevy::prelude::*;
 use bevy_xpbd_2d::{components::{LinearVelocity, Position, RigidBody, Rotation}, math::Vector, plugins::{collision::{Collider, Collisions}, spatial_query::{ShapeCaster, ShapeHits}}, SubstepSchedule, SubstepSet};
 
-use crate::{chunk::TILE_SIZE, GameState};
+use crate::{chunk::TILE_SIZE, utils::get_chunk_position, world::GameSystemSet, GameState};
 use crate::utils::lerp;
 
 const PLAYER_SIZE: f32 = 28.0;
@@ -22,17 +22,30 @@ struct PlayerSprite
     pub rotation: f32
 }
 
+#[derive(Resource)]
+pub struct CurrentChunkPosition {
+    pub position: IVec2
+}
+
+#[derive(Event)]
+pub struct ChunkPositionChanged {
+    pub position: IVec2
+}
+
 pub struct PlayerPlugin;
 impl Plugin for PlayerPlugin {
     fn build(&self, app: &mut App) {
-        app.add_systems(OnEnter(GameState::Game), spawn_player);
+        app.insert_resource(CurrentChunkPosition { position: IVec2::ZERO });
+        app.add_event::<ChunkPositionChanged>();
+        app.add_systems(OnEnter(GameState::Game), spawn_player.in_set(GameSystemSet::Player));
         app.add_systems(Update, 
             (
                 player_input,
                 apply_gravity,
                 update_grounded,
-                rotate_player
-            ).chain().run_if(in_state(GameState::Game))
+                rotate_player,
+                set_chunk_pos
+            ).chain().in_set(GameSystemSet::Player)
         );
         app.add_systems(
             SubstepSchedule,
@@ -58,7 +71,7 @@ fn spawn_player(
                     color: Color::rgba(1.0, 1.0, 1.0, 0.0),
                     ..default()
                 },
-                transform: Transform::from_xyz(0.0, 0.0, 2.0),
+                transform: Transform::from_xyz(16.0, 50.0, 1.0),
                 ..default()
             },
             Player {is_on_ground: false, direction: 0 }
@@ -104,9 +117,7 @@ fn rotate_player(
         if let Ok(player) = player_query.get_single() {
             if !player.is_on_ground {
                 player_sprite.rotation -= (9.6 * time.delta_seconds()) * player.direction as f32;
-            }
-
-            if player.direction == 0 {
+            } else {
                 let nineties = (player_sprite.rotation / FRAC_PI_2).round() * FRAC_PI_2;
                 player_sprite.rotation = lerp(player_sprite.rotation, nineties, 0.25);
             }
@@ -194,18 +205,25 @@ fn player_input(
             }
         }
 
-        // if keyboard_input.pressed(KeyCode::Up) || keyboard_input.pressed(KeyCode::W) {
-        //     player_linear_velocity.0.y = speed;
-        // } else if keyboard_input.pressed(KeyCode::Down) || keyboard_input.pressed(KeyCode::S) {
-        //     player_linear_velocity.0.y = -speed;
-        // } else {
-        //     player_linear_velocity.0.y = 0.0;
-        // }
-
         if keyboard_input.pressed(KeyCode::Space) || keyboard_input.pressed(KeyCode::KeyW) || keyboard_input.pressed(KeyCode::ArrowUp) {
            if player.is_on_ground {
                player_linear_velocity.0.y = jump_force;
            }
         }
+    }
+}
+
+fn set_chunk_pos(
+    player_query: Query<&Transform, With<Player>>,
+    mut chunk_pos_changed_ev : EventWriter<ChunkPositionChanged>,
+    mut chunk_pos_res: ResMut<CurrentChunkPosition>
+) {
+    let player_transform = player_query.get_single().unwrap();
+    
+    let player_pos_in_pixels = player_transform.translation.xy().floor();
+    let player_position = IVec2::new((player_pos_in_pixels.x / TILE_SIZE as f32).floor() as i32, (player_pos_in_pixels.y / TILE_SIZE as f32).floor() as i32);
+    if chunk_pos_res.position != get_chunk_position(player_position) {
+        chunk_pos_res.position = get_chunk_position(player_position);
+        chunk_pos_changed_ev.send(ChunkPositionChanged { position: chunk_pos_res.position });
     }
 }
