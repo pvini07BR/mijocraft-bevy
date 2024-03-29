@@ -24,7 +24,9 @@ pub enum PlaceMode {
 
 #[derive(Component, Reflect)]
 #[reflect(Component)]
-pub struct Chunk;
+pub struct Chunk {
+    pub position: IVec2
+}
 
 #[derive(Component, Reflect)]
 #[reflect(Component)]
@@ -32,15 +34,6 @@ pub struct ChunkLayer
 {
     pub blocks: [u8; CHUNK_AREA],
     pub color: Color
-}
-
-impl FromWorld for ChunkLayer {
-    fn from_world(_: &mut World) -> Self {
-        ChunkLayer {
-            blocks: [0; CHUNK_AREA],
-            color: Color::default()
-        }
-    }
 }
 
 #[derive(Component, Reflect)]
@@ -123,7 +116,7 @@ pub fn spawn_chunk(
                     half_extents: Vec3A::splat(CHUNK_WIDTH as f32 / 2.0) * TILE_SIZE as f32,
                 },
                 ShowAabbGizmo {..default()},
-                Chunk,
+                Chunk {position: ev.position},
             )
         ).with_children(|parent| {
             parent.spawn((

@@ -1,6 +1,4 @@
-use std::{fs::File, io::Write};
-
-use bevy::{ecs::system::SystemParam, prelude::*};
+use bevy::{ecs::system::SystemParam, prelude::*, tasks::IoTaskPool};
 
 use crate::{chunk::{Chunk, ChunkLayer, ChunkPlugin, PlaceBlock, PlaceMode, SpawnChunk, CHUNK_AREA, CHUNK_WIDTH, TILE_SIZE}, menu::WorldInfo, utils::*, world::GameSystemSet};
 
@@ -71,10 +69,27 @@ fn place_block_event(
 
 fn despawn_chunks_out_of_view(
     mut commands: Commands,
-    chunk_query: Query<(Entity, &Children, &ViewVisibility), With<Chunk>>,
+    chunk_query: Query<(Entity, &Chunk, &Children, &ViewVisibility)>,
+    chunk_layer_query: Query<&ChunkLayer>,
+    world_info_res: Res<WorldInfo>
 ) {
-    for (c_entity, c_children, c_visibility) in chunk_query.iter() {
+    for (c_entity, chunk, c_children, c_visibility) in chunk_query.iter() {
         if !c_visibility.get() {
+            let mut layers: [serde_big_array::Array<u8, CHUNK_AREA>; 2] = [serde_big_array::Array([0; CHUNK_AREA]); 2];
+            for c in 0..c_children.len() {
+                if chunk_layer_query.contains(c_children[c]) {
+                    let chunk_layer = chunk_layer_query.get(c_children[c]).unwrap();
+                    layers[c] = serde_big_array::Array(chunk_layer.blocks.clone());
+                } else { break; }
+            }
+            let s = bincode::serialize(&layers).unwrap();
+            let a = chunk.position;
+            let world_name = world_info_res.name.clone();
+            IoTaskPool::get()
+            .spawn(async move {
+                std::fs::write(format!("worlds/{}/chunks/{}.bin", world_name, a), &s).expect("Error while saving chunk to file");
+            })
+            .detach();
             commands.entity(c_entity).despawn_recursive();
         }
     }
