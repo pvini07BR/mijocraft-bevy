@@ -1,6 +1,8 @@
+use std::{fs::File, io::Write};
+
 use bevy::{ecs::system::SystemParam, prelude::*};
 
-use crate::{chunk::{Chunk, ChunkLayer, ChunkPlugin, PlaceBlock, PlaceMode, SpawnChunk, CHUNK_AREA, CHUNK_WIDTH, TILE_SIZE}, utils::*, world::GameSystemSet};
+use crate::{chunk::{Chunk, ChunkLayer, ChunkPlugin, PlaceBlock, PlaceMode, SpawnChunk, CHUNK_AREA, CHUNK_WIDTH, TILE_SIZE}, menu::WorldInfo, utils::*, world::GameSystemSet};
 
 #[derive(Event)]
 pub struct TryPlaceBlock
@@ -23,7 +25,7 @@ impl Plugin for ChunkManagerPlugin
     fn build(&self, app: &mut App) {
         app.add_event::<TryPlaceBlock>();
         app.add_plugins(ChunkPlugin);
-        app.add_systems(Update, place_block_event.in_set(GameSystemSet::ChunkManager));
+        app.add_systems(Update, (place_block_event, despawn_chunks_out_of_view).chain().in_set(GameSystemSet::ChunkManager));
     }
 }
 
@@ -63,6 +65,17 @@ fn place_block_event(
                 position: IVec2::new(chunk_position.x as i32, chunk_position.y as i32),
                 place_block: Some(p)
             });
+        }
+    }
+}
+
+fn despawn_chunks_out_of_view(
+    mut commands: Commands,
+    chunk_query: Query<(Entity, &Children, &ViewVisibility), With<Chunk>>,
+) {
+    for (c_entity, c_children, c_visibility) in chunk_query.iter() {
+        if !c_visibility.get() {
+            commands.entity(c_entity).despawn_recursive();
         }
     }
 }

@@ -1,36 +1,80 @@
 use std::{fs, io::ErrorKind};
 
 use bevy::{a11y::{accesskit::{NodeBuilder, Role}, AccessibilityNode}, input::mouse::{MouseScrollUnit, MouseWheel}, prelude::*};
+use bevy_inspector_egui::quick::ResourceInspectorPlugin;
 
 use crate::GameState;
 
 #[derive(Component)]
 struct MainMenu;
 
-#[derive(Resource, Default)]
+#[derive(Component, Default)]
+struct ScrollingList {
+    position: f32,
+}
+
+#[derive(Resource, Default, Reflect)]
+#[reflect(Resource)]
 pub struct WorldInfo {
-    pub path: Option<String>
+    pub name: String
 }
 
 pub struct MenuPlugin;
 
 impl Plugin for MenuPlugin {
     fn build(&self, app: &mut App) {
-        app.init_resource::<WorldInfo>();
-        app.add_systems(OnEnter(GameState::Menu), (setup_menu, check_worlds_directory));
+        app.insert_resource(WorldInfo { name: "teste".to_string() });
+        app.register_type::<WorldInfo>();
+        app.add_plugins(ResourceInspectorPlugin::<WorldInfo>::default());
+        app.add_systems(OnEnter(GameState::Menu), (setup_menu, check_worlds_directory).chain());
         app.add_systems(Update, mouse_scroll.run_if(in_state(GameState::Menu)));
         app.add_systems(OnExit(GameState::Menu), destroy_menu);
     }
 }
 
-fn check_worlds_directory() {
+fn check_worlds_directory(
+    mut commands: Commands,
+    scroll_list_q: Query<Entity, With<ScrollingList>>,
+    asset_server: Res<AssetServer>
+) {
+    let scrollist_e = scroll_list_q.single();
+
     let dir = fs::read_dir("worlds");
 
     if let Ok(files) = dir {
         for entry in files {
             if let Ok(entry) = entry {
                 if entry.path().is_dir() {
-                    println!("{:?}", entry.file_name());
+                    let world_name = entry.file_name().into_string().unwrap();
+
+                    commands.spawn((
+                        Name::new(format!("World Entry: \"{}\"", world_name)),
+                        ButtonBundle {
+                            style: Style {
+                                width: Val::Percent(100.0),
+                                margin: UiRect::all(Val::Px(4.0)),
+                                padding: UiRect::all(Val::Px(4.0)),
+                                border: UiRect::all(Val::Px(4.0)),
+                                justify_content: JustifyContent::Start,
+                                align_items: AlignItems::Center,
+                                ..default()
+                            },
+                            border_color: BorderColor(Color::WHITE),
+                            background_color: BackgroundColor(Color::BLACK),
+                            ..default()
+                        },
+                        Label,
+                        AccessibilityNode(NodeBuilder::new(Role::ListItem)),
+                    )).with_children(|parent| {
+                        parent.spawn(TextBundle::from_section(
+                            world_name,
+                            TextStyle {
+                                font: asset_server.load("fonts/nokiafc22.ttf"),
+                                font_size: 24.0,
+                                ..default()
+                            }
+                        ));
+                    }).set_parent(scrollist_e);
                 }
             }
         }
@@ -56,6 +100,7 @@ fn setup_menu(
             style: Style {
                 width: Val::Percent(100.0),
                 height: Val::Percent(100.0),
+                flex_direction: FlexDirection::Column,
                 align_items: AlignItems::Center,
                 justify_content: JustifyContent::Center,
                 ..default()
@@ -64,7 +109,9 @@ fn setup_menu(
         },
         MainMenu
     )).with_children(|parent| {
-        parent.spawn(NodeBundle {
+        parent.spawn((
+            Name::new("World Picker"),
+            NodeBundle {
                 style: Style {
                     flex_direction: FlexDirection::Column,
                     align_self: AlignSelf::Center,
@@ -75,11 +122,10 @@ fn setup_menu(
                 },
                 background_color: Color::rgb(0.10, 0.10, 0.10).into(),
                 ..default()
-            }).with_children(|parent| {
-                
+            })).with_children(|world_picker_parent| {
                 // Moving panel
-                parent
-                .spawn((
+                world_picker_parent.spawn((
+                    Name::new("Scrolling Panel"),
                     NodeBundle {
                             style: Style {
                                 flex_direction: FlexDirection::Column,
@@ -96,54 +142,85 @@ fn setup_menu(
                         },
                         ScrollingList::default(),
                         AccessibilityNode(NodeBuilder::new(Role::List)),
-                    )).with_children(|parent| {
-                        // List items
-                        for i in 0..30 {
-                            parent.spawn((
-                                ButtonBundle {
-                                    style: Style {
-                                        width: Val::Percent(100.0),
-                                        margin: UiRect::all(Val::Px(4.0)),
-                                        padding: UiRect::all(Val::Px(4.0)),
-                                        border: UiRect::all(Val::Px(4.0)),
-                                        justify_content: JustifyContent::Start,
-                                        align_items: AlignItems::Center,
-                                        ..default()
-                                    },
-                                    border_color: BorderColor(Color::WHITE),
-                                    background_color: BackgroundColor(Color::BLACK),
-                                    ..default()
-                                },
-                                Label,
-                                AccessibilityNode(NodeBuilder::new(Role::ListItem)),
-                            )).with_children(|parent| {
-                                parent.spawn(TextBundle::from_section(
-                                    format!("Item {i}"),
-                                    TextStyle {
-                                        font: asset_server.load("fonts/nokiafc22.ttf"),
-                                        font_size: 24.0,
-                                        ..default()
-                                    }
-                                ));
-                            });
-                        }
-                    });
+                    ));
                 });
-            });
-        }
-        
-        fn destroy_menu(
-            mut commands: Commands,
-            entity_query: Query<Entity, With<MainMenu>>
-        ) {
-            for entity in entity_query.iter() {
-                commands.entity(entity).despawn_recursive();
+        parent.spawn((
+            Name::new("World Picker Buttons"),
+            NodeBundle {
+                style: Style {
+                    width: Val::Percent(50.0),
+                    flex_direction: FlexDirection::Row,
+                    align_items: AlignItems::Center,
+                    justify_content: JustifyContent::SpaceEvenly,
+                    ..default()
+                },
+                ..default()
             }
-        }
+        )).with_children(|w_p_buttons_parent| {
+            w_p_buttons_parent.spawn((
+                Name::new("Create World Button"),
+                ButtonBundle {
+                    style: Style {
+                        width: Val::Percent(100.0),
+                        margin: UiRect::all(Val::Px(4.0)),
+                        padding: UiRect::all(Val::Px(4.0)),
+                        border: UiRect::all(Val::Px(4.0)),
+                        justify_content: JustifyContent::Center,
+                        align_items: AlignItems::Center,
+                        ..default()
+                    },
+                    border_color: BorderColor(Color::WHITE),
+                    background_color: BackgroundColor(Color::BLACK),
+                    ..default()
+                },
+            )).with_children(|button_parent| {
+                button_parent.spawn(TextBundle::from_section(
+                    "Create World",
+                    TextStyle {
+                        font: asset_server.load("fonts/nokiafc22.ttf"),
+                        font_size: 24.0,
+                        ..default()
+                    }
+                ));
+            });
+
+            w_p_buttons_parent.spawn((
+                Name::new("Another Button"),
+                ButtonBundle {
+                    style: Style {
+                        width: Val::Percent(100.0),
+                        margin: UiRect::all(Val::Px(4.0)),
+                        padding: UiRect::all(Val::Px(4.0)),
+                        border: UiRect::all(Val::Px(4.0)),
+                        justify_content: JustifyContent::Center,
+                        align_items: AlignItems::Center,
+                        ..default()
+                    },
+                    border_color: BorderColor(Color::WHITE),
+                    background_color: BackgroundColor(Color::BLACK),
+                    ..default()
+                },
+            )).with_children(|button_parent| {
+                button_parent.spawn(TextBundle::from_section(
+                    "Another Button",
+                    TextStyle {
+                        font: asset_server.load("fonts/nokiafc22.ttf"),
+                        font_size: 24.0,
+                        ..default()
+                    }
+                ));
+            });
+        });
+    });
+}
         
-        #[derive(Component, Default)]
-struct ScrollingList {
-    position: f32,
+fn destroy_menu(
+    mut commands: Commands,
+    entity_query: Query<Entity, With<MainMenu>>
+) {
+    for entity in entity_query.iter() {
+        commands.entity(entity).despawn_recursive();
+    }
 }
 
 fn mouse_scroll(

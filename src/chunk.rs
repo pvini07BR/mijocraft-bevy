@@ -22,17 +22,29 @@ pub enum PlaceMode {
     BLOCK = 1
 }
 
-#[derive(Component)]
+#[derive(Component, Reflect)]
+#[reflect(Component)]
 pub struct Chunk;
 
-#[derive(Component)]
+#[derive(Component, Reflect)]
+#[reflect(Component)]
 pub struct ChunkLayer
 {
     pub blocks: [u8; CHUNK_AREA],
     pub color: Color
 }
 
-#[derive(Component)]
+impl FromWorld for ChunkLayer {
+    fn from_world(_: &mut World) -> Self {
+        ChunkLayer {
+            blocks: [0; CHUNK_AREA],
+            color: Color::default()
+        }
+    }
+}
+
+#[derive(Component, Reflect)]
+#[reflect(Component)]
 struct BlockChunkLayer;
 
 #[derive(Event, Debug, Clone, Copy)]
@@ -67,6 +79,9 @@ impl Plugin for ChunkPlugin {
         app.add_event::<SpawnChunk>();
         app.add_event::<RemeshChunk>();
         app.add_event::<RecollisionChunk>();
+        app.register_type::<ChunkLayer>();
+        app.register_type::<Chunk>();
+        app.register_type::<BlockChunkLayer>();
         app.add_systems(Update, (spawn_chunk, set_block, remesh, regenerate_collision).chain().in_set(GameSystemSet::Chunk));
    } 
 }
@@ -91,7 +106,7 @@ pub fn spawn_chunk(
         
         let id = commands.spawn(
             (
-                Name::new("Chunk"),
+                Name::new(format!("Chunk at ({}, {})", ev.position.x, ev.position.y)),
                 RigidBody::Static,
                 SpriteBundle {
                     sprite: Sprite {
@@ -312,7 +327,7 @@ fn regenerate_collision(
         let children = chunk_query.get(ev.entity).unwrap();
         for c in children.iter() {
             if collider_query.contains(*c) {
-                commands.entity(*c).despawn();
+                commands.entity(*c).despawn_recursive();
             }
         }
         let block_chunk_layer = chunk_layer_query.get(children[PlaceMode::BLOCK as usize]).unwrap();
