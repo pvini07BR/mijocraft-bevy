@@ -56,7 +56,7 @@ impl Plugin for WorldPlugin {
                 GameSystemSet::Player
             ).chain().run_if(in_state(GameState::Game)))
 
-            .add_systems(OnEnter(GameState::Game), (set_clear_color, setup, places).chain().in_set(GameSystemSet::World))
+            .add_systems(OnEnter(GameState::Game), (set_clear_color, setup).chain().in_set(GameSystemSet::World))
             .add_systems(Update, 
                (
                     update_cursor,
@@ -144,14 +144,6 @@ fn setup(
             },
             CursorPlaceModeIcon
         ));
-    });
-}
-
-fn places(mut try_place_block_ev: EventWriter<TryPlaceBlock>) {
-    try_place_block_ev.send(TryPlaceBlock {
-        position: IVec2::new(0, 0),
-        layer: PlaceMode::BLOCK,
-        id: 1
     });
 }
 

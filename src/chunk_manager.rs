@@ -21,7 +21,7 @@ pub struct LoadChunks;
 
 #[derive(SystemParam)]
 pub struct GetBlockSysParam<'w, 's> {
-    pub chunk_query: Query<'w, 's, (&'static Transform, &'static Children), With<Chunk>>,
+    pub chunk_query: Query<'w, 's, (Entity, &'static Transform, &'static Children), With<Chunk>>,
     pub chunk_layer_query: Query<'w, 's, &'static ChunkLayer>
 }
 
@@ -39,8 +39,7 @@ impl Plugin for ChunkManagerPlugin
 }
 
 fn place_block_event(
-    chunk_query: Query<(&Transform, Entity, &Children), With<Chunk>>,
-    chunk_layer_query: Query<&ChunkLayer>,
+    mut sys_param: GetBlockSysParam<'_, '_>,
     mut try_place_block_ev: EventReader<TryPlaceBlock>,
     mut place_block_ev: EventWriter<PlaceBlock>
 ) {
@@ -55,13 +54,46 @@ fn place_block_event(
             entity: Entity::PLACEHOLDER
         };
 
-        for (transform, chunk_entity, chunk_children) in chunk_query.iter()
+        for (chunk_entity, transform, chunk_children) in sys_param.chunk_query.iter()
         {
-            let to_pixel_pos = Vec2::new((chunk_position.x as f32 * CHUNK_WIDTH as f32) * TILE_SIZE as f32, (chunk_position.y as f32 * CHUNK_WIDTH as f32) * TILE_SIZE as f32);
-            if transform.translation.xy() == to_pixel_pos {
-                let chunk_layer = chunk_layer_query.get(chunk_children[p.layer as usize]).unwrap();
+            if get_chunk_position_from_translation(transform.translation.xy()) == chunk_position {
+                p.entity = chunk_entity;
+
+                let chunk_layer = sys_param.chunk_layer_query.get(chunk_children[p.layer as usize]).unwrap();
                 if chunk_layer.blocks[get_index_from_position(p.position)] <= 0 && p.id > 0 || chunk_layer.blocks[get_index_from_position(p.position)] > 0 && p.id <= 0 {
-                    p.entity = chunk_entity;
+                    // Also check neighbors when placing a block
+                    if p.id > 0 {
+                        // For blocks, just check if there is a neighboring block (in the same layer only),
+                        // also if there is a wall on the same position
+
+                        if ev.layer == PlaceMode::BLOCK {
+                            let wall = lazy_get_block(&mut sys_param, ev.position, PlaceMode::WALL);
+
+                            let left = lazy_get_block(&mut sys_param, ev.position + IVec2::NEG_X, PlaceMode::BLOCK);
+                            let up = lazy_get_block(&mut sys_param, ev.position + IVec2::Y, PlaceMode::BLOCK);
+                            let right = lazy_get_block(&mut sys_param, ev.position + IVec2::X, PlaceMode::BLOCK);
+                            let down = lazy_get_block(&mut sys_param, ev.position + IVec2::NEG_Y, PlaceMode::BLOCK);
+    
+                            if !(wall > 0 || left > 0 || up > 0 || right > 0 || down > 0) { return; }
+                        
+                        // For walls, check for neighbors in walls AND blocks (both layers!)
+                        } else if ev.layer == PlaceMode::WALL {
+                            let b_left = lazy_get_block(&mut sys_param, ev.position + IVec2::NEG_X, PlaceMode::BLOCK);
+                            let w_left = lazy_get_block(&mut sys_param, ev.position + IVec2::NEG_X, PlaceMode::WALL);
+
+                            let b_up = lazy_get_block(&mut sys_param, ev.position + IVec2::Y, PlaceMode::BLOCK);
+                            let w_up = lazy_get_block(&mut sys_param, ev.position + IVec2::Y, PlaceMode::WALL);
+
+                            let b_right = lazy_get_block(&mut sys_param, ev.position + IVec2::X, PlaceMode::BLOCK);
+                            let w_right = lazy_get_block(&mut sys_param, ev.position + IVec2::X, PlaceMode::WALL);
+
+                            let b_down = lazy_get_block(&mut sys_param, ev.position + IVec2::NEG_Y, PlaceMode::BLOCK);
+                            let w_down = lazy_get_block(&mut sys_param, ev.position + IVec2::NEG_Y, PlaceMode::WALL);
+    
+                            if !(b_left > 0 || b_up > 0 || b_right > 0 || b_down > 0 || w_left > 0 || w_up > 0 || w_right > 0 || w_down > 0) { return; }
+                        }
+                    }
+
                     place_block_ev.send(p);
                 }
                 return;
@@ -178,6 +210,26 @@ fn load_chunks(
     }
 }
 
+pub fn lazy_get_block(
+    sys_param: &mut GetBlockSysParam<'_, '_>,
+    block_coords: IVec2,
+    place_mode: PlaceMode
+) -> u8 {
+    let chunk_coords = get_chunk_position(block_coords);
+
+    for (_, chunk_transform, chunk_children) in sys_param.chunk_query.iter() {
+        let chunk_pos = get_chunk_position_from_translation(chunk_transform.translation.xy());
+        if chunk_pos == chunk_coords {
+            if let Ok(chunk_layer) = sys_param.chunk_layer_query.get(chunk_children[place_mode as usize]) {
+                let relative = get_relative_position(block_coords, chunk_coords);
+                return chunk_layer.blocks[get_index_from_position(relative)];
+            }
+        }
+    }
+
+    return 0;
+}
+
 pub fn get_block(sys_param: &mut GetBlockSysParam<'_, '_>, relative_coords: IVec2, chunk_position: IVec2, place_mode: PlaceMode, blocks: &[u8; CHUNK_AREA]) -> u8 {
     // First check if the relative coordinates are inside the same chunk
     if relative_coord_is_inside_bounds(relative_coords) {
@@ -186,7 +238,7 @@ pub fn get_block(sys_param: &mut GetBlockSysParam<'_, '_>, relative_coords: IVec
     }
     else {
         // If not, then start checking which chunk it belongs to
-        for (chunk_transform, chunk_children) in sys_param.chunk_query.iter() {
+        for (_, chunk_transform, chunk_children) in sys_param.chunk_query.iter() {
             let chunk_pos = get_chunk_position_from_translation(chunk_transform.translation.xy());
             if chunk_pos == chunk_position { continue; }
             if chunk_pos == (chunk_position + get_chunk_diff(relative_coords)) {
