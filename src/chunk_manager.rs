@@ -1,6 +1,6 @@
 use bevy::{ecs::system::SystemParam, prelude::*, window::PrimaryWindow};
 
-use crate::{chunk::{Chunk, ChunkLayer, ChunkPlugin, PlaceBlock, PlaceMode, SpawnChunk, CHUNK_AREA, CHUNK_WIDTH, TILE_SIZE}, menu::WorldInfo, utils::*, world::GameSystemSet};
+use crate::{chunk::{Chunk, ChunkLayer, ChunkPlugin, PlaceBlock, PlaceMode, SpawnChunk, CHUNK_AREA, CHUNK_WIDTH}, menu::WorldInfo, utils::*, world::GameSystemSet};
 
 #[derive(Event)]
 pub struct TryPlaceBlock
