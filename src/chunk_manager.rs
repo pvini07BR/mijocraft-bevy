@@ -1,6 +1,6 @@
 use bevy::{ecs::system::SystemParam, prelude::*, window::PrimaryWindow};
 
-use crate::{chunk::{Chunk, ChunkLayer, ChunkPlugin, PlaceBlock, PlaceMode, SpawnChunk, CHUNK_AREA, CHUNK_WIDTH}, menu::WorldInfo, utils::*, world::GameSystemSet};
+use crate::{chunk::{Chunk, ChunkLayer, ChunkPlugin, PlaceBlock, PlaceMode, SpawnChunk, CHUNK_AREA, CHUNK_WIDTH}, utils::*, world::{GameSystemSet, WorldGenPreset, WorldInfo}};
 
 #[derive(Event)]
 pub struct TryPlaceBlock
@@ -170,9 +170,11 @@ fn load_chunks(
     
             let c_top_left = get_chunk_position(b_top_left);
             let c_bottom_right = get_chunk_position(b_bottom_right);
-    
-            for y in c_bottom_right.y..(c_top_left.y+1) {
-                for x in c_top_left.x..(c_bottom_right.x+1) {
+            
+            // Had to make it load some extra chunks offscreen
+            // to make it truly seamless
+            for y in (c_bottom_right.y-1)..(c_top_left.y+2) {
+                for x in (c_top_left.x-1)..(c_bottom_right.x+2) {
                     let pos = IVec2::new(x, y);
                     let mut already_has: bool = false;
                     
@@ -199,9 +201,44 @@ fn load_chunks(
                                 },
                                 Err(e) => println!("Error when trying to load chunk at {}: {}", pos, e)
                             }
+                        } else {
+                            // TODO: This is where world generation goes in!
+                            match world_info_res.preset {
+                                WorldGenPreset::EMPTY => {
+                                    if pos == IVec2::ZERO {
+                                        for x in 0..(CHUNK_WIDTH/2) {
+                                            blocks[x] = 1;
+                                        }
+                                    } else if pos == IVec2::new(-1, 0) {
+                                        for x in 0..(CHUNK_WIDTH/2) {
+                                            blocks[(CHUNK_WIDTH/2)+x] = 1;
+                                        }
+                                    }
+                                },
+                                WorldGenPreset::FLAT => {
+                                    if pos.y == 0 {
+                                        for y in 0..CHUNK_WIDTH {
+                                            for x in 0..CHUNK_WIDTH {
+                                                if y == CHUNK_WIDTH/2 {
+                                                    blocks[get_index_from_position(UVec2::new(x as u32, y as u32))] = 1;
+                                                }
+                                                else if y < CHUNK_WIDTH/2 {
+                                                    blocks[get_index_from_position(UVec2::new(x as u32, y as u32))] = 2;
+                                                }
+                                            }
+                                        }
+                                    }
+                                    else if pos.y < 0 && pos.y >= -2 {
+                                        blocks = [2; CHUNK_AREA];
+                                    }
+                                    else if pos.y < -2 {
+                                        blocks = [3; CHUNK_AREA];
+                                    }
+                                }
+                                _ => {}
+                            }
                         }
                         
-                        // TODO: This is where world generation goes in!
                         spawn_chunk_ev.send(SpawnChunk { position: pos, blocks: blocks, walls: walls });
                     }
                 }

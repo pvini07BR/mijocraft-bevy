@@ -1,7 +1,6 @@
 use std::{fs, io::ErrorKind};
 
 use bevy::{a11y::{accesskit::{NodeBuilder, Role}, AccessibilityNode}, input::mouse::{MouseScrollUnit, MouseWheel}, prelude::*};
-use bevy_inspector_egui::quick::ResourceInspectorPlugin;
 
 use crate::GameState;
 
@@ -13,19 +12,10 @@ struct ScrollingList {
     position: f32,
 }
 
-#[derive(Resource, Default, Reflect)]
-#[reflect(Resource)]
-pub struct WorldInfo {
-    pub name: String
-}
-
 pub struct MenuPlugin;
 
 impl Plugin for MenuPlugin {
     fn build(&self, app: &mut App) {
-        app.insert_resource(WorldInfo { name: "teste".to_string() });
-        app.register_type::<WorldInfo>();
-        app.add_plugins(ResourceInspectorPlugin::<WorldInfo>::default());
         app.add_systems(OnEnter(GameState::Menu), (setup_menu, check_worlds_directory).chain());
         app.add_systems(Update, mouse_scroll.run_if(in_state(GameState::Menu)));
         app.add_systems(OnExit(GameState::Menu), destroy_menu);

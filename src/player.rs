@@ -1,7 +1,6 @@
 use std::f32::consts::FRAC_PI_2;
 
 use bevy::prelude::*;
-use bevy_inspector_egui::quick::ResourceInspectorPlugin;
 use bevy_xpbd_2d::{components::{LinearVelocity, Position, RigidBody, Rotation}, math::Vector, plugins::{collision::{Collider, Collisions}, spatial_query::{ShapeCaster, ShapeHits}}, SubstepSchedule, SubstepSet};
 
 use crate::{chunk::{Chunk, TILE_SIZE}, chunk_manager::UnloadChunks, utils::get_chunk_position, world::GameSystemSet, GameState};
@@ -24,8 +23,7 @@ struct PlayerSprite
     pub rotation: f32
 }
 
-#[derive(Resource, Default, Reflect)]
-#[reflect(Resource)]
+#[derive(Resource)]
 pub struct CurrentChunkPosition {
     pub position: IVec2
 }
@@ -34,8 +32,6 @@ pub struct PlayerPlugin;
 impl Plugin for PlayerPlugin {
     fn build(&self, app: &mut App) {
         app.insert_resource(CurrentChunkPosition { position: IVec2::ZERO });
-        app.register_type::<CurrentChunkPosition>();
-        app.add_plugins(ResourceInspectorPlugin::<CurrentChunkPosition>::default());
         app.add_systems(OnEnter(GameState::Game), spawn_player.in_set(GameSystemSet::Player));
         app.add_systems(Update, 
             (

@@ -6,6 +6,7 @@ use crate::player::{Player, PlayerPlugin};
 use crate::{utils::*, GameState};
 
 use bevy::{input::mouse::MouseWheel, prelude::*, sprite::SpriteBundle, window::PrimaryWindow};
+use bevy_inspector_egui::quick::ResourceInspectorPlugin;
 use bevy_xpbd_2d::{prelude::*, SubstepSchedule, SubstepSet};
 
 #[derive(SystemSet, Debug, Clone, PartialEq, Eq, Hash)]
@@ -14,6 +15,21 @@ pub enum GameSystemSet {
     ChunkManager,
     Player,
     World
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Reflect, Default)]
+pub enum WorldGenPreset {
+    #[default]
+    EMPTY,
+    FLAT,
+    DEFAULT
+}
+
+#[derive(Resource, Default, Reflect)]
+#[reflect(Resource)]
+pub struct WorldInfo {
+    pub name: String,
+    pub preset: WorldGenPreset
 }
 
 #[derive(Component)]
@@ -38,6 +54,10 @@ pub struct WorldPlugin;
 
 impl Plugin for WorldPlugin {
     fn build(&self, app: &mut App) {
+        app.insert_resource(WorldInfo { name: "teste".to_string(), preset: WorldGenPreset::FLAT });
+        app.register_type::<WorldInfo>();
+        app.add_plugins(ResourceInspectorPlugin::<WorldInfo>::default());
+        
         app.insert_resource(Gravity(Vec2::NEG_Y * (9.81 * TILE_SIZE as f32)))
             .add_plugins(ChunkManagerPlugin)
             .add_plugins(PlayerPlugin)
