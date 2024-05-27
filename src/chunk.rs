@@ -52,7 +52,8 @@ pub struct PlaceBlock
 #[derive(Event)]
 pub struct SpawnChunk {
     pub position: IVec2,
-    pub place_block: Option<PlaceBlock>
+    pub blocks: [u8; CHUNK_AREA],
+    pub walls: [u8; CHUNK_AREA]
 }
 
 #[derive(Event)]
@@ -82,11 +83,12 @@ impl Plugin for ChunkPlugin {
 pub fn spawn_chunk(
     mut commands: Commands, 
     mut spawn_chunk_ev: EventReader<SpawnChunk>,
-    mut place_block_ev: EventWriter<PlaceBlock>,
     mut meshes: ResMut<Assets<Mesh>>,
     mut materials: ResMut<Assets<ColorMaterial>>,
     chunk_query: Query<&Transform, With<Chunk>>,
     asset_server: Res<AssetServer>,
+    mut remesh_chunk_ev: EventWriter<RemeshChunk>,
+    mut recol_chunk_ev: EventWriter<RecollisionChunk>
 ) {
     for ev in spawn_chunk_ev.read() {
         let pixel_chunk_pos = Vec2::new((ev.position.x as f32 * CHUNK_WIDTH as f32) * TILE_SIZE as f32, (ev.position.y as f32 * CHUNK_WIDTH as f32) * TILE_SIZE as f32);
@@ -121,7 +123,7 @@ pub fn spawn_chunk(
         ).with_children(|parent| {
             parent.spawn((
                 Name::new("Chunk Wall Layer"),
-                ChunkLayer { blocks: [0; CHUNK_AREA], color: Color::rgba(0.25, 0.25, 0.25, 1.0) },
+                ChunkLayer { blocks: ev.walls, color: Color::rgba(0.25, 0.25, 0.25, 1.0) },
                 MaterialMesh2dBundle {
                     mesh: meshes.add(generate_chunk_layer_mesh()).into(),
                     material: chunk_material_handle.clone(),
@@ -136,7 +138,7 @@ pub fn spawn_chunk(
 
             parent.spawn((
                 Name::new("Chunk Block Layer"),
-                ChunkLayer { blocks: [0; CHUNK_AREA], color: Color::WHITE },
+                ChunkLayer { blocks: ev.blocks, color: Color::WHITE },
                 MaterialMesh2dBundle {
                     mesh: meshes.add(generate_chunk_layer_mesh()).into(),
                     material: chunk_material_handle,
@@ -151,10 +153,8 @@ pub fn spawn_chunk(
             ));
         }).id();
 
-        if let Some(mut p) = ev.place_block {
-            p.entity = id;
-            place_block_ev.send(p);
-        }
+        remesh_chunk_ev.send(RemeshChunk { entity: id });
+        recol_chunk_ev.send(RecollisionChunk { entity: id });
     }
 }
 

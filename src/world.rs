@@ -1,5 +1,5 @@
 use crate::chunk::{self, PlaceMode, AVAILABLE_BLOCKS, CHUNK_WIDTH, TILE_SIZE};
-use crate::chunk_manager::{ChunkManagerPlugin, TryPlaceBlock};
+use crate::chunk_manager::{ChunkManagerPlugin, UnloadChunks, TryPlaceBlock};
 
 use crate::player::{Player, PlayerPlugin};
 
@@ -62,7 +62,8 @@ impl Plugin for WorldPlugin {
                     update_cursor,
                     block_input,
                     switch_place_mode,
-                    mouse_scroll_input
+                    mouse_scroll_input,
+                    force_reload_chunks
                 ).in_set(GameSystemSet::World))
             .add_systems(SubstepSchedule, camera_follow_player.in_set(SubstepSet::ApplyTranslation).run_if(in_state(GameState::Game)))
             ;
@@ -285,5 +286,14 @@ fn switch_place_mode(
         }
 
         place_mode_texture_atlas.index = cursor.layer as usize;
+    }
+}
+
+fn force_reload_chunks(
+    keyboard_input: Res<ButtonInput<KeyCode>>,
+    mut unload_chunks_ev: EventWriter<UnloadChunks>
+) {
+    if keyboard_input.just_pressed(KeyCode::F5) {
+        unload_chunks_ev.send(UnloadChunks {force: true});
     }
 }

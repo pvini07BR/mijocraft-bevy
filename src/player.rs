@@ -1,9 +1,10 @@
 use std::f32::consts::FRAC_PI_2;
 
 use bevy::prelude::*;
+use bevy_inspector_egui::quick::ResourceInspectorPlugin;
 use bevy_xpbd_2d::{components::{LinearVelocity, Position, RigidBody, Rotation}, math::Vector, plugins::{collision::{Collider, Collisions}, spatial_query::{ShapeCaster, ShapeHits}}, SubstepSchedule, SubstepSet};
 
-use crate::{chunk::TILE_SIZE, utils::get_chunk_position, world::GameSystemSet, GameState};
+use crate::{chunk::{Chunk, TILE_SIZE}, chunk_manager::UnloadChunks, utils::get_chunk_position, world::GameSystemSet, GameState};
 use crate::utils::lerp;
 
 const PLAYER_SIZE: f32 = 28.0;
@@ -13,7 +14,8 @@ const TERMINAL_GRAVITY: f32 = 530.0;
 #[derive(Component)]
 pub struct Player {
     pub is_on_ground: bool,
-    pub direction: i8
+    pub direction: i8,
+    pub noclip: bool
 }
 
 #[derive(Component)]
@@ -22,13 +24,9 @@ struct PlayerSprite
     pub rotation: f32
 }
 
-#[derive(Resource)]
+#[derive(Resource, Default, Reflect)]
+#[reflect(Resource)]
 pub struct CurrentChunkPosition {
-    pub position: IVec2
-}
-
-#[derive(Event)]
-pub struct ChunkPositionChanged {
     pub position: IVec2
 }
 
@@ -36,26 +34,47 @@ pub struct PlayerPlugin;
 impl Plugin for PlayerPlugin {
     fn build(&self, app: &mut App) {
         app.insert_resource(CurrentChunkPosition { position: IVec2::ZERO });
-        app.add_event::<ChunkPositionChanged>();
+        app.register_type::<CurrentChunkPosition>();
+        app.add_plugins(ResourceInspectorPlugin::<CurrentChunkPosition>::default());
         app.add_systems(OnEnter(GameState::Game), spawn_player.in_set(GameSystemSet::Player));
         app.add_systems(Update, 
             (
-                player_input,
+                (player_input,
                 apply_gravity,
                 update_grounded,
-                rotate_player,
+                rotate_player).run_if(is_inside_valid_chunk),
                 set_chunk_pos
             ).chain().in_set(GameSystemSet::Player)
         );
         app.add_systems(
             SubstepSchedule,
-            solve_collisions.in_set(SubstepSet::SolveUserConstraints).run_if(in_state(GameState::Game)),
+            solve_collisions.in_set(SubstepSet::SolveUserConstraints).run_if(in_state(GameState::Game)).run_if(is_not_in_noclip).run_if(is_inside_valid_chunk),
         );
     }
 }
 
+fn is_inside_valid_chunk(
+    chunk_pos_res: Res<CurrentChunkPosition>,
+    chunk_query: Query<&Chunk>
+) -> bool
+{
+    for chunk in chunk_query.iter() {
+        if chunk.position == chunk_pos_res.position {
+            return true;
+        }
+    }
+    return false;
+}
+
+fn is_not_in_noclip(
+    player_query: Query<&Player>
+) -> bool{
+    return !player_query.get_single().unwrap().noclip;
+}
+
 fn spawn_player(
-    mut commands: Commands
+    mut commands: Commands,
+    mut unload_chunks_ev : EventWriter<UnloadChunks>
 ) {
     let player_collider = Collider::rectangle(PLAYER_SIZE, PLAYER_SIZE);
 
@@ -74,7 +93,7 @@ fn spawn_player(
                 transform: Transform::from_xyz(16.0, 50.0, 1.0),
                 ..default()
             },
-            Player {is_on_ground: false, direction: 0 }
+            Player {is_on_ground: false, direction: 0, noclip: false }
         )
     ).with_children(|parent| {
         parent.spawn(
@@ -92,6 +111,8 @@ fn spawn_player(
             )
         );
     });
+
+    unload_chunks_ev.send(UnloadChunks { force: true });
 }
 
 fn update_grounded(
@@ -173,11 +194,13 @@ fn apply_gravity(
     time: Res<Time>
 ) {
     if let Ok((mut player_velocity, player)) = player_query.get_single_mut() {
-        if !player.is_on_ground {
-            if player_velocity.y > -TERMINAL_GRAVITY {
-                player_velocity.y -= (GRAVITY_ACCEL * TILE_SIZE as f32) * time.delta_seconds();
-            } else if player_velocity.y < -TERMINAL_GRAVITY {
-                player_velocity.y = -TERMINAL_GRAVITY;
+        if !player.noclip {
+            if !player.is_on_ground {
+                if player_velocity.y > -TERMINAL_GRAVITY {
+                    player_velocity.y -= (GRAVITY_ACCEL * TILE_SIZE as f32) * time.delta_seconds();
+                } else if player_velocity.y < -TERMINAL_GRAVITY {
+                    player_velocity.y = -TERMINAL_GRAVITY;
+                }
             }
         }
     }
@@ -190,32 +213,48 @@ fn player_input(
     if let Ok((mut player_linear_velocity, mut player)) = player_query.get_single_mut() {
         let speed: f32 = TILE_SIZE as f32 * 10.0;
         let jump_force = 16.0 * TILE_SIZE as f32;
+
+        if keyboard_input.just_pressed(KeyCode::KeyF) {
+            player.noclip = !player.noclip;
+        }
     
         if keyboard_input.pressed(KeyCode::ArrowLeft) || keyboard_input.pressed(KeyCode::KeyA) {
-            player_linear_velocity.0.x = lerp(player_linear_velocity.0.x, -speed, 0.25);
+            player_linear_velocity.x = lerp(player_linear_velocity.x, -speed, 0.25);
             player.direction = -1;
         }
         else if keyboard_input.pressed(KeyCode::ArrowRight) || keyboard_input.pressed(KeyCode::KeyD) {
-            player_linear_velocity.0.x = lerp(player_linear_velocity.0.x, speed, 0.25);
+            player_linear_velocity.x = lerp(player_linear_velocity.x, speed, 0.25);
             player.direction = 1;
         } else {
-            player_linear_velocity.0.x = lerp(player_linear_velocity.0.x, 0.0, 0.25);
+            player_linear_velocity.x = lerp(player_linear_velocity.x, 0.0, 0.25);
             if player.is_on_ground {
                 player.direction = 0;
             }
         }
 
         if keyboard_input.pressed(KeyCode::Space) || keyboard_input.pressed(KeyCode::KeyW) || keyboard_input.pressed(KeyCode::ArrowUp) {
-           if player.is_on_ground {
-               player_linear_velocity.0.y = jump_force;
-           }
+            if !player.noclip {
+                if player.is_on_ground {
+                    player_linear_velocity.y = jump_force;
+                }
+            }
+        }
+
+        if player.noclip {
+            if keyboard_input.pressed(KeyCode::KeyS) || keyboard_input.pressed(KeyCode::ArrowDown) {
+                player_linear_velocity.y = lerp(player_linear_velocity.y, -speed, 0.25);
+            } else if keyboard_input.pressed(KeyCode::Space) || keyboard_input.pressed(KeyCode::KeyW) || keyboard_input.pressed(KeyCode::ArrowUp) {
+                player_linear_velocity.y = lerp(player_linear_velocity.y, speed, 0.25);
+            } else {
+                player_linear_velocity.y = lerp(player_linear_velocity.y, 0.0, 0.25);
+            }
         }
     }
 }
 
 fn set_chunk_pos(
     player_query: Query<&Transform, With<Player>>,
-    mut chunk_pos_changed_ev : EventWriter<ChunkPositionChanged>,
+    mut unload_chunks_ev : EventWriter<UnloadChunks>,
     mut chunk_pos_res: ResMut<CurrentChunkPosition>
 ) {
     let player_transform = player_query.get_single().unwrap();
@@ -223,7 +262,7 @@ fn set_chunk_pos(
     let player_pos_in_pixels = player_transform.translation.xy().floor();
     let player_position = IVec2::new((player_pos_in_pixels.x / TILE_SIZE as f32).floor() as i32, (player_pos_in_pixels.y / TILE_SIZE as f32).floor() as i32);
     if chunk_pos_res.position != get_chunk_position(player_position) {
+        unload_chunks_ev.send(UnloadChunks { force: false });
         chunk_pos_res.position = get_chunk_position(player_position);
-        chunk_pos_changed_ev.send(ChunkPositionChanged { position: chunk_pos_res.position });
     }
 }

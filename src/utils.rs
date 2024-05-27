@@ -47,10 +47,17 @@ pub fn get_index_from_position(position: UVec2) -> usize {
     return position.x as usize + (position.y as usize * CHUNK_WIDTH);
 }
 
-pub fn get_chunk_position(global_position: IVec2) -> IVec2 {
+pub fn get_block_position(pixel_position: Vec2) -> IVec2 {
     return IVec2::new(
-        (global_position.x as f32 / CHUNK_WIDTH as f32).floor() as i32,
-        (global_position.y as f32 / CHUNK_WIDTH as f32).floor() as i32
+        (pixel_position.x / TILE_SIZE as f32).floor() as i32,
+        (pixel_position.y / TILE_SIZE as f32).floor() as i32,
+    );
+}
+
+pub fn get_chunk_position(block_position: IVec2) -> IVec2 {
+    return IVec2::new(
+        (block_position.x as f32 / CHUNK_WIDTH as f32).floor() as i32,
+        (block_position.y as f32 / CHUNK_WIDTH as f32).floor() as i32
     );
 }
 
