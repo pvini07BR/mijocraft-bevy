@@ -25,7 +25,7 @@ pub enum PlaceMode {
 #[derive(Component, Reflect)]
 #[reflect(Component)]
 pub struct Chunk {
-    pub position: IVec2
+    pub position: IVec2,
 }
 
 #[derive(Component, Reflect)]
@@ -118,7 +118,7 @@ pub fn spawn_chunk(
                     half_extents: Vec3A::splat(CHUNK_WIDTH as f32 / 2.0) * TILE_SIZE as f32,
                 },
                 ShowAabbGizmo {..default()},
-                Chunk {position: ev.position},
+                Chunk {position: ev.position },
             )
         ).with_children(|parent| {
             parent.spawn((
@@ -180,7 +180,7 @@ fn set_block(
 
 fn remesh(
     mut remesh_chunk_ev: EventReader<RemeshChunk>,
-    chunk_query: Query<(&Children, &Transform), With<Chunk>>,
+    chunk_query: Query<(&Children, &Transform)>,
     chunk_layer_query: Query<(&ChunkLayer, &Mesh2dHandle)>,
     mut sys_param: GetBlockSysParam<'_, '_>,
     mut meshes: ResMut<Assets<Mesh>>,
@@ -215,10 +215,10 @@ fn remesh(
                         vertex_positions[i * VERTICES_PER_BLOCK + 3] = [position.x as f32 * TILE_SIZE as f32,                    position.y as f32 * TILE_SIZE as f32 + TILE_SIZE as f32, 0.0];
     
                         // Vertex Colors
-                        vertex_colors[i * VERTICES_PER_BLOCK    ] = chunk_layer.color.as_rgba_f32();
-                        vertex_colors[i * VERTICES_PER_BLOCK + 1] = chunk_layer.color.as_rgba_f32();
-                        vertex_colors[i * VERTICES_PER_BLOCK + 2] = chunk_layer.color.as_rgba_f32();
-                        vertex_colors[i * VERTICES_PER_BLOCK + 3] = chunk_layer.color.as_rgba_f32();
+                        vertex_colors[i * VERTICES_PER_BLOCK    ] = [chunk_layer.color.r(), chunk_layer.color.g(), chunk_layer.color.b(), 1.0];
+                        vertex_colors[i * VERTICES_PER_BLOCK + 1] = [chunk_layer.color.r(), chunk_layer.color.g(), chunk_layer.color.b(), 1.0];
+                        vertex_colors[i * VERTICES_PER_BLOCK + 2] = [chunk_layer.color.r(), chunk_layer.color.g(), chunk_layer.color.b(), 1.0];
+                        vertex_colors[i * VERTICES_PER_BLOCK + 3] = [chunk_layer.color.r(), chunk_layer.color.g(), chunk_layer.color.b(), 1.0];
     
                         // Set block UVs
                         vertex_uvs[i * VERTICES_PER_BLOCK    ] = [(1.0 / AVAILABLE_BLOCKS as f32) * (chunk_layer.blocks[i] - 1) as f32, 1.0];

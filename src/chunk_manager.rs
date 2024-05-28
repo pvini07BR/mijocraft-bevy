@@ -21,7 +21,7 @@ pub struct LoadChunks;
 
 #[derive(SystemParam)]
 pub struct GetBlockSysParam<'w, 's> {
-    pub chunk_query: Query<'w, 's, (Entity, &'static Transform, &'static Children), With<Chunk>>,
+    pub chunk_query: Query<'w, 's, (&'static Chunk, Entity, &'static Transform, &'static Children)>,
     pub chunk_layer_query: Query<'w, 's, &'static ChunkLayer>
 }
 
@@ -54,7 +54,7 @@ fn place_block_event(
             entity: Entity::PLACEHOLDER
         };
 
-        for (chunk_entity, transform, chunk_children) in sys_param.chunk_query.iter()
+        for (_, chunk_entity, transform, chunk_children) in sys_param.chunk_query.iter()
         {
             if get_chunk_position_from_translation(transform.translation.xy()) == chunk_position {
                 p.entity = chunk_entity;
@@ -254,7 +254,7 @@ pub fn lazy_get_block(
 ) -> u8 {
     let chunk_coords = get_chunk_position(block_coords);
 
-    for (_, chunk_transform, chunk_children) in sys_param.chunk_query.iter() {
+    for (_, _, chunk_transform, chunk_children) in sys_param.chunk_query.iter() {
         let chunk_pos = get_chunk_position_from_translation(chunk_transform.translation.xy());
         if chunk_pos == chunk_coords {
             if let Ok(chunk_layer) = sys_param.chunk_layer_query.get(chunk_children[place_mode as usize]) {
@@ -275,7 +275,7 @@ pub fn get_block(sys_param: &mut GetBlockSysParam<'_, '_>, relative_coords: IVec
     }
     else {
         // If not, then start checking which chunk it belongs to
-        for (_, chunk_transform, chunk_children) in sys_param.chunk_query.iter() {
+        for (_, _, chunk_transform, chunk_children) in sys_param.chunk_query.iter() {
             let chunk_pos = get_chunk_position_from_translation(chunk_transform.translation.xy());
             if chunk_pos == chunk_position { continue; }
             if chunk_pos == (chunk_position + get_chunk_diff(relative_coords)) {

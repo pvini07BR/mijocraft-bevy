@@ -75,6 +75,11 @@ pub fn get_chunk_position_from_translation(translation: Vec2) -> IVec2 {
     );
 }
 
+pub fn get_global_position(chunk_position: IVec2, relative_pos: UVec2) -> IVec2 {
+    let to_block = IVec2::new(chunk_position.x * CHUNK_WIDTH as i32, chunk_position.y * CHUNK_WIDTH as i32);
+    return IVec2::new(to_block.x + relative_pos.x as i32, to_block.y + relative_pos.y as i32);
+}
+
 pub fn modular(a: i32, b: i32) -> i32
 {
     return ((a % b) + b) % b;
