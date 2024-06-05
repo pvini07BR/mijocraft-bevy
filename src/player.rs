@@ -3,7 +3,7 @@ use std::f32::consts::FRAC_PI_2;
 use bevy::prelude::*;
 use bevy_xpbd_2d::{components::{LinearVelocity, Position, RigidBody, Rotation}, math::Vector, plugins::{collision::{Collider, Collisions}, spatial_query::{ShapeCaster, ShapeHits}}, SubstepSchedule, SubstepSet};
 
-use crate::{chunk::{Chunk, TILE_SIZE}, chunk_manager::UnloadChunks, utils::get_chunk_position, world::GameSystemSet, GameState};
+use crate::{chunk::{ChunkComponent, TILE_SIZE}, chunk_manager::{Chunks, LoadChunks, UnloadChunks}, utils::get_chunk_position, world::GameSystemSet, GameState};
 use crate::utils::lerp;
 
 const PLAYER_SIZE: f32 = 28.0;
@@ -35,31 +35,19 @@ impl Plugin for PlayerPlugin {
         app.add_systems(OnEnter(GameState::Game), spawn_player.in_set(GameSystemSet::Player));
         app.add_systems(Update, 
             (
-                (player_input,
+                player_input,
                 apply_gravity,
                 update_grounded,
-                rotate_player).run_if(is_inside_valid_chunk),
-                set_chunk_pos
+                rotate_player,
+                set_chunk_pos,
+                stop_player_at_invalid_chunk
             ).chain().in_set(GameSystemSet::Player)
         );
         app.add_systems(
             SubstepSchedule,
-            solve_collisions.in_set(SubstepSet::SolveUserConstraints).run_if(in_state(GameState::Game)).run_if(is_not_in_noclip).run_if(is_inside_valid_chunk),
+            solve_collisions.in_set(SubstepSet::SolveUserConstraints).run_if(in_state(GameState::Game)).run_if(is_not_in_noclip),
         );
     }
-}
-
-fn is_inside_valid_chunk(
-    chunk_pos_res: Res<CurrentChunkPosition>,
-    chunk_query: Query<&Chunk>
-) -> bool
-{
-    for chunk in chunk_query.iter() {
-        if chunk.position == chunk_pos_res.position {
-            return true;
-        }
-    }
-    return false;
 }
 
 fn is_not_in_noclip(
@@ -70,7 +58,7 @@ fn is_not_in_noclip(
 
 fn spawn_player(
     mut commands: Commands,
-    mut unload_chunks_ev : EventWriter<UnloadChunks>
+    mut load_chunks_ev : EventWriter<LoadChunks>
 ) {
     let player_collider = Collider::rectangle(PLAYER_SIZE, PLAYER_SIZE);
 
@@ -108,7 +96,8 @@ fn spawn_player(
         );
     });
 
-    unload_chunks_ev.send(UnloadChunks { force: true });
+    //unload_chunks_ev.send(UnloadChunks { force: true });
+    load_chunks_ev.send(LoadChunks);
 }
 
 fn update_grounded(
@@ -260,5 +249,23 @@ fn set_chunk_pos(
     if chunk_pos_res.position != get_chunk_position(player_position) {
         unload_chunks_ev.send(UnloadChunks { force: false });
         chunk_pos_res.position = get_chunk_position(player_position);
+    }
+}
+
+fn stop_player_at_invalid_chunk(
+    chunks_res: Res<Chunks>,
+    chunk_pos_res: Res<CurrentChunkPosition>,
+    chunk_query: Query<&ChunkComponent>,
+    mut player_query: Query<&mut LinearVelocity, With<Player>>
+) {
+    for chunk in chunk_query.iter() {
+        if chunk.position == chunk_pos_res.position && chunks_res.contains_key(&chunk_pos_res.position) {
+            return;
+        }
+    }
+
+    if let Ok(mut player_vel) = player_query.get_single_mut() {
+        player_vel.x = 0.0;
+        player_vel.y = 0.0;
     }
 }

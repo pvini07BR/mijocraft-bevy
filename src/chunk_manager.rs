@@ -1,6 +1,7 @@
-use bevy::{ecs::system::SystemParam, prelude::*, window::PrimaryWindow};
+use bevy::{math::Vec3A, prelude::*, render::primitives::Aabb, sprite::{Anchor, MaterialMesh2dBundle}, utils::HashMap, window::PrimaryWindow};
+use bevy_xpbd_2d::components::RigidBody;
 
-use crate::{chunk::{Chunk, ChunkLayer, ChunkPlugin, PlaceBlock, PlaceMode, SpawnChunk, CHUNK_AREA, CHUNK_WIDTH}, utils::*, world::{GameSystemSet, WorldGenPreset, WorldInfo}};
+use crate::{chunk::{generate_chunk_layer_mesh, CalcLightChunks, Chunk, ChunkComponent, ChunkLayer, ChunkPlugin, PlaceMode, RecollisionChunk, RemeshChunks, CHUNK_AREA, CHUNK_WIDTH, TILE_SIZE}, utils::*, world::{GameSystemSet, WorldGenPreset, WorldInfo}};
 
 #[derive(Event)]
 pub struct TryPlaceBlock
@@ -19,11 +20,13 @@ pub struct UnloadChunks
 #[derive(Event)]
 pub struct LoadChunks;
 
-#[derive(SystemParam)]
-pub struct GetBlockSysParam<'w, 's> {
-    pub chunk_query: Query<'w, 's, (&'static Chunk, Entity, &'static Transform, &'static Children)>,
-    pub chunk_layer_query: Query<'w, 's, &'static ChunkLayer>
+#[derive(Event)]
+pub struct SpawnChunk {
+    pub position: IVec2
 }
+
+#[derive(Resource, DerefMut, Deref)]
+pub struct Chunks(pub HashMap<IVec2, Chunk>);
 
 pub struct ChunkManagerPlugin;
 
@@ -31,77 +34,154 @@ impl Plugin for ChunkManagerPlugin
 {
     fn build(&self, app: &mut App) {
         app.add_event::<TryPlaceBlock>();
+        app.add_event::<SpawnChunk>();
         app.add_event::<UnloadChunks>();
         app.add_event::<LoadChunks>();
+        app.insert_resource(Chunks(HashMap::new()));
         app.add_plugins(ChunkPlugin);
-        app.add_systems(Update, (unload_and_save_chunks, load_chunks, place_block_event).chain().in_set(GameSystemSet::ChunkManager));
+        app.add_systems(Update, (load_chunks, spawn_chunk, try_to_place_block_event).chain().in_set(GameSystemSet::ChunkManager));
     }
 }
 
-fn place_block_event(
-    mut sys_param: GetBlockSysParam<'_, '_>,
+pub fn spawn_chunk(
+    mut commands: Commands,
+    mut meshes: ResMut<Assets<Mesh>>,
+    mut materials: ResMut<Assets<ColorMaterial>>,
+    mut spawn_chunk_ev: EventReader<SpawnChunk>,
+    mut calc_light_ev: EventWriter<CalcLightChunks>,
+    mut remesh_chunk_ev: EventWriter<RemeshChunks>,
+    mut recol_chunk_ev: EventWriter<RecollisionChunk>,
+    asset_server: Res<AssetServer>
+) {
+    for ev in spawn_chunk_ev.read() {
+
+        let pixel_chunk_pos = Vec2::new((ev.position.x as f32 * CHUNK_WIDTH as f32) * TILE_SIZE as f32, (ev.position.y as f32 * CHUNK_WIDTH as f32) * TILE_SIZE as f32);
+        let chunk_material_handle = materials.add(asset_server.load("textures/blocks.png"));
+        
+        let id = commands.spawn(
+            (
+                Name::new(format!("Chunk at ({}, {})", ev.position.x, ev.position.y)),
+                RigidBody::Static,
+                SpriteBundle {
+                    sprite: Sprite {
+                        color: Color::rgba(1.0, 1.0, 1.0, 0.0),
+                        anchor: Anchor::BottomLeft,
+                        custom_size: Some(Vec2::splat(CHUNK_WIDTH as f32 * TILE_SIZE as f32)),
+                        ..default()
+                    },
+                    transform: Transform::from_xyz(pixel_chunk_pos.x, pixel_chunk_pos.y, 0.0),
+                    ..default()
+                },
+                Aabb {
+                    center: Vec3A::splat(CHUNK_WIDTH as f32 / 2.0) * TILE_SIZE as f32,
+                    half_extents: Vec3A::splat(CHUNK_WIDTH as f32 / 2.0) * TILE_SIZE as f32,
+                },
+                ShowAabbGizmo {..default()},
+                ChunkComponent {position: ev.position},
+            )
+        ).with_children(|parent| {
+            parent.spawn((
+                Name::new("Chunk Wall Layer"),
+                MaterialMesh2dBundle {
+                    mesh: meshes.add(generate_chunk_layer_mesh()).into(),
+                    material: chunk_material_handle.clone(),
+                    transform: Transform::from_xyz(0.0, 0.0, -1.0),
+                    ..default()
+                },
+                Aabb {
+                    center: Vec3A::splat(CHUNK_WIDTH as f32 / 2.0) * TILE_SIZE as f32,
+                    half_extents: Vec3A::splat(CHUNK_WIDTH as f32 / 2.0) * TILE_SIZE as f32,
+                },
+                ChunkLayer
+            ));
+
+            parent.spawn((
+                Name::new("Chunk Block Layer"),
+                MaterialMesh2dBundle {
+                    mesh: meshes.add(generate_chunk_layer_mesh()).into(),
+                    material: chunk_material_handle,
+                    transform: Transform::from_xyz(0.0, 0.0, 0.0),
+                    ..default()
+                },
+                Aabb {
+                    center: Vec3A::splat(CHUNK_WIDTH as f32 / 2.0) * TILE_SIZE as f32,
+                    half_extents: Vec3A::splat(CHUNK_WIDTH as f32 / 2.0) * TILE_SIZE as f32,
+                },
+                ChunkLayer
+            ));
+        }).id();
+
+        calc_light_ev.send(CalcLightChunks);
+        remesh_chunk_ev.send(RemeshChunks);
+        recol_chunk_ev.send(RecollisionChunk { entity: id });
+    }
+}
+
+fn try_to_place_block_event(
+    mut chunks_res: ResMut<Chunks>,
     mut try_place_block_ev: EventReader<TryPlaceBlock>,
-    mut place_block_ev: EventWriter<PlaceBlock>
+    mut calc_light_ev: EventWriter<CalcLightChunks>,
+    mut remesh_chunk_ev: EventWriter<RemeshChunks>,
+    mut recol_chunk_ev: EventWriter<RecollisionChunk>,
+    chunk_query: Query<(Entity, &ChunkComponent)>
 ) {
     for ev in try_place_block_ev.read() {
         let chunk_position = get_chunk_position(ev.position);
         let relative_pos = get_relative_position(ev.position, chunk_position);
-    
-        let mut p = PlaceBlock{
-            layer: ev.layer,
-            position: UVec2::new(relative_pos.x as u32, relative_pos.y as u32),
-            id: ev.id,
-            entity: Entity::PLACEHOLDER
-        };
+        let block_neighbors = get_neighboring_blocks(&chunks_res, ev.position, PlaceMode::BLOCK);
+        let wall_neighbors = get_neighboring_blocks(&chunks_res, ev.position, PlaceMode::WALL);
 
-        for (_, chunk_entity, transform, chunk_children) in sys_param.chunk_query.iter()
-        {
-            if get_chunk_position_from_translation(transform.translation.xy()) == chunk_position {
-                p.entity = chunk_entity;
+        if let Some(chunk) = chunks_res.get_mut(&chunk_position) {
+            let index = get_index_from_position(relative_pos);
 
-                let chunk_layer = sys_param.chunk_layer_query.get(chunk_children[p.layer as usize]).unwrap();
-                if chunk_layer.blocks[get_index_from_position(p.position)] <= 0 && p.id > 0 || chunk_layer.blocks[get_index_from_position(p.position)] > 0 && p.id <= 0 {
-                    // Also check neighbors when placing a block
-                    if p.id > 0 {
-                        // For blocks, just check if there is a neighboring block (in the same layer only),
-                        // also if there is a wall on the same position
-
-                        if ev.layer == PlaceMode::BLOCK {
-                            let wall = lazy_get_block(&mut sys_param, ev.position, PlaceMode::WALL);
-
-                            let left = lazy_get_block(&mut sys_param, ev.position + IVec2::NEG_X, PlaceMode::BLOCK);
-                            let up = lazy_get_block(&mut sys_param, ev.position + IVec2::Y, PlaceMode::BLOCK);
-                            let right = lazy_get_block(&mut sys_param, ev.position + IVec2::X, PlaceMode::BLOCK);
-                            let down = lazy_get_block(&mut sys_param, ev.position + IVec2::NEG_Y, PlaceMode::BLOCK);
-    
-                            if !(wall > 0 || left > 0 || up > 0 || right > 0 || down > 0) { return; }
-                        
-                        // For walls, check for neighbors in walls AND blocks (both layers!)
-                        } else if ev.layer == PlaceMode::WALL {
-                            let b_left = lazy_get_block(&mut sys_param, ev.position + IVec2::NEG_X, PlaceMode::BLOCK);
-                            let w_left = lazy_get_block(&mut sys_param, ev.position + IVec2::NEG_X, PlaceMode::WALL);
-
-                            let b_up = lazy_get_block(&mut sys_param, ev.position + IVec2::Y, PlaceMode::BLOCK);
-                            let w_up = lazy_get_block(&mut sys_param, ev.position + IVec2::Y, PlaceMode::WALL);
-
-                            let b_right = lazy_get_block(&mut sys_param, ev.position + IVec2::X, PlaceMode::BLOCK);
-                            let w_right = lazy_get_block(&mut sys_param, ev.position + IVec2::X, PlaceMode::WALL);
-
-                            let b_down = lazy_get_block(&mut sys_param, ev.position + IVec2::NEG_Y, PlaceMode::BLOCK);
-                            let w_down = lazy_get_block(&mut sys_param, ev.position + IVec2::NEG_Y, PlaceMode::WALL);
-    
-                            if !(b_left > 0 || b_up > 0 || b_right > 0 || b_down > 0 || w_left > 0 || w_up > 0 || w_right > 0 || w_down > 0) { return; }
+            if ev.id > 0 {
+                if chunk.layers[ev.layer as usize][index] <= 0 {
+                    match ev.layer {
+                        PlaceMode::BLOCK => {
+                            if let Some(bn) = block_neighbors {
+                                if let Some(wn) = wall_neighbors {
+                                    if wn[0] > 0 ||
+                                        bn[1] > 0 || bn[2] > 0 || bn[3] > 0 || bn[4] > 0
+                                    {
+                                        chunk.layers[PlaceMode::BLOCK as usize][index] = ev.id;
+                                    }
+                                }
+                            }
+                        },
+                        PlaceMode::WALL => {
+                            if let Some(bn) = block_neighbors {
+                                if let Some(wn) = wall_neighbors {
+                                    if bn[0] > 0 || bn[1] > 0 || bn[2] > 0 || bn[3] > 0 || bn[4] > 0 ||
+                                        wn[1] > 0 || wn[2] > 0 || wn[3] > 0 || wn[4] > 0
+                                    {
+                                        chunk.layers[PlaceMode::WALL as usize][index] = ev.id;
+                                    }
+                                }
+                            }
                         }
                     }
-
-                    place_block_ev.send(p);
                 }
-                return;
+            }
+            else
+            {
+                if chunk.layers[ev.layer as usize][index] > 0 {
+                    chunk.layers[ev.layer as usize][index] = 0;
+                }
+            }
+
+            calc_light_ev.send(CalcLightChunks);
+            remesh_chunk_ev.send(RemeshChunks);
+            for (entity, chunk_compo) in chunk_query.iter() {
+                if chunk_compo.position == chunk_position {
+                    recol_chunk_ev.send(RecollisionChunk { entity });
+                }
             }
         }
+
     }
 }
 
+/*
 fn unload_and_save_chunks(
     mut unload_chunks_ev : EventReader<UnloadChunks>,
     mut load_chunks_ev: EventWriter<LoadChunks>,
@@ -133,27 +213,28 @@ fn unload_and_save_chunks(
                 }
                 /*
                 IoTaskPool::get()
-                    .spawn(async move {
-                        match std::fs::write(format!("worlds/{}/chunks/{}.bin", world_name, a), &s) {
-                            Err(e) => println!("Error saving chunk at {}: {}", a, e),
-                            _ => {}
-                        }
-                    }).detach();
+                .spawn(async move {
+                    match std::fs::write(format!("worlds/{}/chunks/{}.bin", world_name, a), &s) {
+                        Err(e) => println!("Error saving chunk at {}: {}", a, e),
+                        _ => {}
+                    }
+                }).detach();
                 */
                 commands.entity(c_entity).despawn_recursive();
             }
         }
-
+        
         load_chunks_ev.send(LoadChunks {});
     }
 }
+*/
 
 fn load_chunks(
+    mut chunks_res: ResMut<Chunks>,
     mut load_chunks_ev: EventReader<LoadChunks>,
     mut spawn_chunk_ev: EventWriter<SpawnChunk>,
     window_query: Query<&Window, With<PrimaryWindow>>,
     camera_query: Query<(&Camera, &GlobalTransform), With<Camera2d>>,
-    chunk_query: Query<&Chunk>,
     world_info_res: Res<WorldInfo>
 ) {
     // ==========================
@@ -176,14 +257,7 @@ fn load_chunks(
             for y in (c_bottom_right.y-1)..(c_top_left.y+2) {
                 for x in (c_top_left.x-1)..(c_bottom_right.x+2) {
                     let pos = IVec2::new(x, y);
-                    let mut already_has: bool = false;
-                    
-                    for chunk in chunk_query.iter() {
-                        if chunk.position == pos {
-                            already_has = true;
-                            break;
-                        }
-                    }
+                    let already_has: bool = chunks_res.contains_key(&pos);
                     
                     if !already_has {
                         let str = format!("worlds/{}/chunks/{}.bin", world_info_res.name, pos);
@@ -239,56 +313,11 @@ fn load_chunks(
                             }
                         }
                         
-                        spawn_chunk_ev.send(SpawnChunk { position: pos, blocks: blocks, walls: walls });
+                        chunks_res.insert(pos, Chunk { layers: [walls, blocks], light: [0; CHUNK_AREA] });
+                        spawn_chunk_ev.send(SpawnChunk{ position: pos });
                     }
                 }
             }
         }
-    }
-}
-
-pub fn lazy_get_block(
-    sys_param: &mut GetBlockSysParam<'_, '_>,
-    block_coords: IVec2,
-    place_mode: PlaceMode
-) -> u8 {
-    let chunk_coords = get_chunk_position(block_coords);
-
-    for (_, _, chunk_transform, chunk_children) in sys_param.chunk_query.iter() {
-        let chunk_pos = get_chunk_position_from_translation(chunk_transform.translation.xy());
-        if chunk_pos == chunk_coords {
-            if let Ok(chunk_layer) = sys_param.chunk_layer_query.get(chunk_children[place_mode as usize]) {
-                let relative = get_relative_position(block_coords, chunk_coords);
-                return chunk_layer.blocks[get_index_from_position(relative)];
-            }
-        }
-    }
-
-    return 0;
-}
-
-pub fn get_block(sys_param: &mut GetBlockSysParam<'_, '_>, relative_coords: IVec2, chunk_position: IVec2, place_mode: PlaceMode, blocks: &[u8; CHUNK_AREA]) -> u8 {
-    // First check if the relative coordinates are inside the same chunk
-    if relative_coord_is_inside_bounds(relative_coords) {
-        let uvec = UVec2::new(relative_coords.x as u32, relative_coords.y as u32);
-        return blocks[get_index_from_position(uvec)];
-    }
-    else {
-        // If not, then start checking which chunk it belongs to
-        for (_, _, chunk_transform, chunk_children) in sys_param.chunk_query.iter() {
-            let chunk_pos = get_chunk_position_from_translation(chunk_transform.translation.xy());
-            if chunk_pos == chunk_position { continue; }
-            if chunk_pos == (chunk_position + get_chunk_diff(relative_coords)) {
-                if let Ok(chunk_layer) = sys_param.chunk_layer_query.get(chunk_children[place_mode as usize]) {
-                    let fixed_pos = UVec2::new(
-                        modular(relative_coords.x, CHUNK_WIDTH as i32) as u32,
-                        modular(relative_coords.y, CHUNK_WIDTH as i32) as u32
-                    );
-                    return chunk_layer.blocks[get_index_from_position(fixed_pos)];
-                }
-            }
-        }
-
-        return 0;
     }
 }
