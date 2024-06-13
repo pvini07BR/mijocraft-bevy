@@ -1,6 +1,9 @@
 # Info
 This is a 2D Minecraft clone made with Rust and Bevy. It doesn't have really a defined purpose, but I'm thinking of making it a sandbox game focused on creativity and engineering.
+
 Though I have to admit, this is the most ambitious, complex and hard to code projects I've ever done.
+
+At the moment, there is no binaries to download, because it's not meant to be released yet. It's still in development. If you want to play it you have to compile it yourself. It's pretty easy, just clone this repo with ``git clone https://github.com/pvini07BR/mijocraft-bevy.git`` and then ``cd mijocraft-bevy`` and then ``cargo run``. It can take a while to compile everything though.
 
 # Todo
 - Chunk System (✓)
