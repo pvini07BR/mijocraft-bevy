@@ -20,11 +20,11 @@ These features might not be added, or it's delayed for a distant future.
 - Physics objects (such as being able to play with a beach ball)
 
 # Controls
-WASD/Arrow Keys - Move player
-Space/W/Up Arrow - Jump
-F - Toggle noclip fly mode
-Mouse Scroll - Change block to place
-Left Mouse Click - Destroy block at cursor
-Right Mouse Click - Place block at cursor
-Tab - Change placement layer between Block/Wall
-Ctrl + Mouse Scroll - Zoom 
+- WASD/Arrow Keys - Move player
+- Space/W/Up Arrow - Jump
+- F - Toggle noclip fly mode
+- Mouse Scroll - Change block to place
+- Left Mouse Click - Destroy block at cursor
+- Right Mouse Click - Place block at cursor
+- Tab - Change placement layer between Block/Wall
+- Ctrl + Mouse Scroll - Zoom 
