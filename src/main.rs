@@ -23,7 +23,7 @@ fn main() {
         .init_state::<GameState>()
         .add_plugins(DefaultPlugins.set(ImagePlugin::default_nearest()))
         .add_plugins(WorldInspectorPlugin::new())
-        //.add_plugins(PhysicsDebugPlugin::default())
+        .add_plugins(PhysicsDebugPlugin::default())
         .add_plugins(PhysicsPlugins::default())
         .add_plugins(WorldPlugin)
         .add_plugins(MenuPlugin)

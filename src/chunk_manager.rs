@@ -1,14 +1,14 @@
 use bevy::{math::Vec3A, prelude::*, render::primitives::Aabb, sprite::{Anchor, MaterialMesh2dBundle}, utils::HashMap, window::PrimaryWindow};
 use bevy_xpbd_2d::components::RigidBody;
 
-use crate::{chunk::{generate_chunk_layer_mesh, CalcLightChunks, Chunk, ChunkComponent, ChunkLayer, ChunkPlugin, PlaceMode, RecollisionChunk, RemeshChunks, CHUNK_AREA, CHUNK_WIDTH, TILE_SIZE}, utils::*, world::{GameSystemSet, WorldGenPreset, WorldInfo}};
+use crate::{chunk::{generate_chunk_layer_mesh, BlockType, CalcLightChunks, Chunk, ChunkComponent, ChunkLayer, ChunkPlugin, PlaceMode, RecollisionChunk, RemeshChunks, CHUNK_AREA, CHUNK_WIDTH, TILE_SIZE}, utils::*, world::{GameSystemSet, WorldGenPreset, WorldInfo}};
 
 #[derive(Event)]
 pub struct TryPlaceBlock
 {
     pub layer: PlaceMode,
     pub position: IVec2,
-    pub id: u8,
+    pub id: BlockType,
 }
 
 #[derive(Event)]
@@ -134,14 +134,14 @@ fn try_to_place_block_event(
         if let Some(chunk) = chunks_res.get_mut(&chunk_position) {
             let index = get_index_from_position(relative_pos);
 
-            if ev.id > 0 {
-                if chunk.layers[ev.layer as usize][index] <= 0 {
+            if ev.id > BlockType::AIR {
+                if chunk.layers[ev.layer as usize][index] <= BlockType::AIR {
                     match ev.layer {
                         PlaceMode::BLOCK => {
                             if let Some(bn) = block_neighbors {
                                 if let Some(wn) = wall_neighbors {
-                                    if wn[0] > 0 ||
-                                        bn[1] > 0 || bn[2] > 0 || bn[3] > 0 || bn[4] > 0
+                                    if wn[0] > BlockType::AIR ||
+                                        bn[1] > BlockType::AIR || bn[2] > BlockType::AIR || bn[3] > BlockType::AIR || bn[4] > BlockType::AIR
                                     {
                                         chunk.layers[PlaceMode::BLOCK as usize][index] = ev.id;
                                     }
@@ -151,8 +151,8 @@ fn try_to_place_block_event(
                         PlaceMode::WALL => {
                             if let Some(bn) = block_neighbors {
                                 if let Some(wn) = wall_neighbors {
-                                    if bn[0] > 0 || bn[1] > 0 || bn[2] > 0 || bn[3] > 0 || bn[4] > 0 ||
-                                        wn[1] > 0 || wn[2] > 0 || wn[3] > 0 || wn[4] > 0
+                                    if bn[0] > BlockType::AIR || bn[1] > BlockType::AIR || bn[2] > BlockType::AIR || bn[3] > BlockType::AIR || bn[4] > BlockType::AIR ||
+                                        wn[1] > BlockType::AIR || wn[2] > BlockType::AIR || wn[3] > BlockType::AIR || wn[4] > BlockType::AIR
                                     {
                                         chunk.layers[PlaceMode::WALL as usize][index] = ev.id;
                                     }
@@ -164,8 +164,8 @@ fn try_to_place_block_event(
             }
             else
             {
-                if chunk.layers[ev.layer as usize][index] > 0 {
-                    chunk.layers[ev.layer as usize][index] = 0;
+                if chunk.layers[ev.layer as usize][index] > BlockType::AIR {
+                    chunk.layers[ev.layer as usize][index] = BlockType::AIR;
                 }
             }
 
@@ -263,13 +263,13 @@ fn load_chunks(
                         let str = format!("worlds/{}/chunks/{}.bin", world_info_res.name, pos);
                         let path = std::path::Path::new(str.as_str());
                         
-                        let mut blocks: [u8; CHUNK_AREA] = [0; CHUNK_AREA];
-                        let mut walls: [u8; CHUNK_AREA] = [0; CHUNK_AREA];
+                        let mut blocks: [BlockType; CHUNK_AREA] = [BlockType::AIR; CHUNK_AREA];
+                        let mut walls: [BlockType; CHUNK_AREA] = [BlockType::AIR; CHUNK_AREA];
                         
                         if path.exists() {
                             match std::fs::read(str) {
                                 Ok(bytes) => {
-                                    let layers: [serde_big_array::Array<u8, CHUNK_AREA>; 2] = bincode::deserialize(&bytes).unwrap();
+                                    let layers: [serde_big_array::Array<BlockType, CHUNK_AREA>; 2] = bincode::deserialize(&bytes).unwrap();
                                     blocks = layers[1].0;
                                     walls = layers[0].0;
                                 },
@@ -281,11 +281,11 @@ fn load_chunks(
                                 WorldGenPreset::EMPTY => {
                                     if pos == IVec2::ZERO {
                                         for x in 0..(CHUNK_WIDTH/2) {
-                                            blocks[x] = 1;
+                                            blocks[x] = BlockType::GRASS;
                                         }
                                     } else if pos == IVec2::new(-1, 0) {
                                         for x in 0..(CHUNK_WIDTH/2) {
-                                            blocks[(CHUNK_WIDTH/2)+x] = 1;
+                                            blocks[(CHUNK_WIDTH/2)+x] = BlockType::GRASS;
                                         }
                                     }
                                 },
@@ -294,19 +294,23 @@ fn load_chunks(
                                         for y in 0..CHUNK_WIDTH {
                                             for x in 0..CHUNK_WIDTH {
                                                 if y == CHUNK_WIDTH/2 {
-                                                    blocks[get_index_from_position(UVec2::new(x as u32, y as u32))] = 1;
+                                                    blocks[get_index_from_position(UVec2::new(x as u32, y as u32))] = BlockType::GRASS;
+                                                    walls[get_index_from_position(UVec2::new(x as u32, y as u32))] = BlockType::GRASS;
                                                 }
                                                 else if y < CHUNK_WIDTH/2 {
-                                                    blocks[get_index_from_position(UVec2::new(x as u32, y as u32))] = 2;
+                                                    blocks[get_index_from_position(UVec2::new(x as u32, y as u32))] = BlockType::DIRT;
+                                                    walls[get_index_from_position(UVec2::new(x as u32, y as u32))] = BlockType::DIRT;
                                                 }
                                             }
                                         }
                                     }
                                     else if pos.y < 0 && pos.y >= -2 {
-                                        blocks = [2; CHUNK_AREA];
+                                        blocks = [BlockType::DIRT; CHUNK_AREA];
+                                        walls = [BlockType::DIRT; CHUNK_AREA];
                                     }
                                     else if pos.y < -2 {
-                                        blocks = [3; CHUNK_AREA];
+                                        blocks = [BlockType::STONE; CHUNK_AREA];
+                                        walls = [BlockType::STONE; CHUNK_AREA];
                                     }
                                 }
                                 _ => {}

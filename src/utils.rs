@@ -89,7 +89,7 @@ pub fn get_block(
     chunks_res: &HashMap<IVec2, Chunk>,
     block_position: IVec2,
     layer: PlaceMode
-) -> u8 {
+) -> BlockType {
     let chunk_pos = get_chunk_position(block_position);
     let relative_position = get_relative_position(block_position, chunk_pos);
     let chunk = chunks_res.get(&chunk_pos).unwrap();
@@ -100,13 +100,13 @@ pub fn get_neighboring_blocks(
     chunks_res: &HashMap<IVec2, Chunk>,
     block_position: IVec2,
     layer: PlaceMode
-) -> Option<[u8; 5]> {
+) -> Option<[BlockType; 5]> {
     // 0 = Center
     // 1 = Up
     // 2 = Right
     // 3 = Down
     // 4 = Left
-    let mut neighbors: [u8; 5] = [0; 5];
+    let mut neighbors: [BlockType; 5] = [BlockType::AIR; 5];
 
     let chunk_pos = get_chunk_position(block_position);
     let relative_position = get_relative_position(block_position, chunk_pos);

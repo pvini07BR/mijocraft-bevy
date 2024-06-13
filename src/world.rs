@@ -1,4 +1,4 @@
-use crate::chunk::{self, PlaceMode, AVAILABLE_BLOCKS, CHUNK_WIDTH, TILE_SIZE};
+use crate::chunk::{self, BlockType, PlaceMode, CHUNK_WIDTH, TILE_SIZE};
 use crate::chunk_manager::{ChunkManagerPlugin, UnloadChunks, TryPlaceBlock};
 
 use crate::player::{Player, PlayerPlugin};
@@ -34,7 +34,7 @@ pub struct WorldInfo {
 
 #[derive(Component)]
 struct BlockCursor {
-    block_index: u8,
+    block_type: BlockType,
     layer: PlaceMode,
     block_position: IVec2,
     relative_position: UVec2,
@@ -116,7 +116,7 @@ fn setup(
             ..default()
         },
         BlockCursor {
-            block_index: 1,
+            block_type: BlockType::GRASS,
             layer: PlaceMode::BLOCK,
             block_position: IVec2::ZERO,
             chunk_position: IVec2::ZERO,
@@ -125,7 +125,7 @@ fn setup(
         FromWorld
     ));
 
-    let layout = TextureAtlasLayout::from_grid(Vec2::splat(TILE_SIZE as f32), AVAILABLE_BLOCKS, 1, None, None);
+    let layout = TextureAtlasLayout::from_grid(Vec2::splat(TILE_SIZE as f32), BlockType::SIZE as usize, 1, None, None);
 
     commands.spawn((
         Name::new("Block Indicator"),
@@ -183,11 +183,11 @@ fn block_input(
 
     if player_position != cursor.block_position || cursor.layer == PlaceMode::WALL {
         if mouse_button_input.just_pressed(MouseButton::Right) {
-            try_place_block_ev.send(TryPlaceBlock { layer: cursor.layer, position: cursor.block_position, id: cursor.block_index });
+            try_place_block_ev.send(TryPlaceBlock { layer: cursor.layer, position: cursor.block_position, id: cursor.block_type });
         }
     }
     if mouse_button_input.just_pressed(MouseButton::Left) {
-        try_place_block_ev.send(TryPlaceBlock { layer: cursor.layer, position: cursor.block_position, id: 0 });
+        try_place_block_ev.send(TryPlaceBlock { layer: cursor.layer, position: cursor.block_position, id: BlockType::AIR });
     }
 }
 
@@ -230,17 +230,17 @@ fn mouse_scroll_input(
         } else {
             let mut cursor = cursor_query.single_mut();
             if ev.y > 0.0 { // Scrolling up
-                if cursor.block_index < AVAILABLE_BLOCKS as u8 {
-                    cursor.block_index += 1;
+                if cursor.block_type < BlockType::GLASS {
+                    cursor.block_type = enum_iterator::next(&cursor.block_type).unwrap();
                 }
             } else if ev.y < 0.0 { // Scrolling down
-                if cursor.block_index > 1 {
-                    cursor.block_index -= 1;
+                if cursor.block_type > BlockType::GRASS {
+                    cursor.block_type = enum_iterator::previous(&cursor.block_type).unwrap();
                 }
             }
 
             let mut icon_tex_atlas = cursor_block_icon_q.single_mut();
-            icon_tex_atlas.index = cursor.block_index as usize - 1;
+            icon_tex_atlas.index = cursor.block_type as usize - 1;
         }
     }
 }

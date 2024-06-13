@@ -9,12 +9,11 @@ const INDICES_PER_BLOCK: usize = 6;
 const CHUNK_MESH_SIZE: usize = CHUNK_AREA * VERTICES_PER_BLOCK;
 const CHUNK_INDEX_COUNT: usize = CHUNK_AREA * INDICES_PER_BLOCK;
 
-pub const AVAILABLE_BLOCKS: usize = 5;
-
 use bevy::{prelude::*, render::{mesh::{Indices, PrimitiveTopology}, render_asset::RenderAssetUsages}, sprite::Mesh2dHandle};
 use bevy_xpbd_2d::plugins::collision::Collider;
+use enum_iterator::Sequence;
 
-use crate::{chunk_manager::Chunks, utils::{get_global_position, get_neighboring_lights, get_position_from_index}, world::GameSystemSet};
+use crate::{chunk_manager::Chunks, utils::{get_global_position, get_index_from_position, get_neighboring_lights, get_position_from_index}, world::GameSystemSet};
 
 #[derive(Clone, Copy, Debug, PartialEq)]
 pub enum PlaceMode {
@@ -22,23 +21,36 @@ pub enum PlaceMode {
     BLOCK = 1
 }
 
-#[derive(Clone, Copy, Debug, PartialEq, Default)]
+use serde::{Serialize, Deserialize};
+
+#[derive(Clone, Copy, Debug, PartialEq, Default, PartialOrd, Serialize, Deserialize, Sequence)]
 pub enum BlockType {
     #[default]
-    AIR,
+    AIR = 0,
     GRASS,
     DIRT,
     STONE,
     PLANKS,
-    GLASS
+    GLASS,
+    SIZE
 }
 
-pub struct Block {
-    pub m_type: BlockType
-}
+impl BlockType {
+    fn is_transparent(&self) -> bool {
+        match self {
+            BlockType::GLASS => true,
+            _ => false
+        }
+    }
 
+    fn is_passthrough(&self) -> bool {
+        match self {
+            _ => false
+        }
+    }
+}
 pub struct Chunk {
-    pub layers: [[u8; CHUNK_AREA]; 2],
+    pub layers: [[BlockType; CHUNK_AREA]; 2],
     pub light: [u8; CHUNK_AREA]
 }
 
@@ -93,7 +105,9 @@ fn calculate_lighting(
             for (chunk_pos, chunk) in chunks.iter() {
                 let mut light = [0; CHUNK_AREA];
                 for i in 0..CHUNK_AREA {
-                    if chunk.layers[PlaceMode::BLOCK as usize][i] <= 0 && chunk.layers[PlaceMode::WALL as usize][i] <= 0 {
+                    if chunk.layers[PlaceMode::BLOCK as usize][i] <= BlockType::AIR && chunk.layers[PlaceMode::WALL as usize][i] <= BlockType::AIR || 
+                        chunk.layers[PlaceMode::BLOCK as usize][i].is_transparent() || chunk.layers[PlaceMode::WALL as usize][i].is_transparent()
+                    {
                         light[i] = 15;
                     } else {
                         let pos = get_position_from_index(i);
@@ -150,7 +164,7 @@ fn remesh(
                     for i in 0..CHUNK_AREA {
                         let position = get_position_from_index(i);
             
-                        if chunk.layers[li][i] > 0 {
+                        if chunk.layers[li][i] > BlockType::AIR {
                             // Positions
                             vertex_positions[i * VERTICES_PER_BLOCK    ] = [position.x as f32 * TILE_SIZE as f32,                    position.y as f32 * TILE_SIZE as f32,                    0.0];
                             vertex_positions[i * VERTICES_PER_BLOCK + 1] = [position.x as f32 * TILE_SIZE as f32 + TILE_SIZE as f32, position.y as f32 * TILE_SIZE as f32,                    0.0];
@@ -167,10 +181,10 @@ fn remesh(
                             vertex_colors[i * VERTICES_PER_BLOCK + 3] = [color.r(), color.g(), color.b(), 1.0];
         
                             // Set block UVs
-                            vertex_uvs[i * VERTICES_PER_BLOCK    ] = [(1.0 / AVAILABLE_BLOCKS as f32) * (chunk.layers[li][i] - 1) as f32, 1.0];
-                            vertex_uvs[i * VERTICES_PER_BLOCK + 1] = [(1.0 / AVAILABLE_BLOCKS as f32) *  chunk.layers[li][i] as f32,      1.0];
-                            vertex_uvs[i * VERTICES_PER_BLOCK + 2] = [(1.0 / AVAILABLE_BLOCKS as f32) *  chunk.layers[li][i] as f32,      0.0];
-                            vertex_uvs[i * VERTICES_PER_BLOCK + 3] = [(1.0 / AVAILABLE_BLOCKS as f32) * (chunk.layers[li][i] - 1) as f32, 0.0];
+                            vertex_uvs[i * VERTICES_PER_BLOCK    ] = [(1.0 / (BlockType::SIZE as usize - 1) as f32) * (chunk.layers[li][i] as usize - 1) as f32, 1.0];
+                            vertex_uvs[i * VERTICES_PER_BLOCK + 1] = [(1.0 / (BlockType::SIZE as usize - 1) as f32) *  chunk.layers[li][i] as usize      as f32, 1.0];
+                            vertex_uvs[i * VERTICES_PER_BLOCK + 2] = [(1.0 / (BlockType::SIZE as usize - 1) as f32) *  chunk.layers[li][i] as usize      as f32, 0.0];
+                            vertex_uvs[i * VERTICES_PER_BLOCK + 3] = [(1.0 / (BlockType::SIZE as usize - 1) as f32) * (chunk.layers[li][i] as usize - 1) as f32, 0.0];
     
                         }
                     }
@@ -190,28 +204,50 @@ fn regenerate_collision(
     chunks: Res<Chunks>,
     mut recol_chunk_ev: EventReader<RecollisionChunk>,
     chunk_query: Query<(&Children, &ChunkComponent)>,
-    collider_query: Query<Entity, With<Collider>>
+    collider_query: Query<&Transform, With<Collider>>
 ) {
     for ev in recol_chunk_ev.read() {
         let (children, chunk_compo) = chunk_query.get(ev.entity).unwrap();
+        let chunk = chunks.get(&chunk_compo.position).unwrap();
+
+        // First check if there are colliders for blocks that don't exist anymore
         for c in children.iter() {
-            if collider_query.contains(*c) {
-                commands.entity(*c).despawn_recursive();
+            if let Ok(collider_transform) = collider_query.get(*c) {
+                let pos = (collider_transform.translation.xy() / TILE_SIZE as f32) - 0.5;
+                let index = get_index_from_position(UVec2::new(pos.x as u32, pos.y as u32));
+                if chunk.layers[PlaceMode::BLOCK as usize][index] <= BlockType::AIR {
+                    commands.entity(*c).despawn_recursive();
+                }
             }
         }
 
+        // Now check if there are blocks that does not have a collider yet
         for i in 0..CHUNK_AREA {
-            if chunks.get(&chunk_compo.position).unwrap().layers[PlaceMode::BLOCK as usize][i] > 0 {
-                let pos = get_position_from_index(i);
-                let pixel_pos = Vec2::new(pos.x as f32 * TILE_SIZE as f32, pos.y as f32 * TILE_SIZE as f32);
+            if chunk.layers[PlaceMode::BLOCK as usize][i] > BlockType::AIR {
+                let mut has_collider: bool = false;
+                for c in children.iter() {
+                    if let Ok(collider_transform) = collider_query.get(*c) {
+                        let pos = (collider_transform.translation.xy() / TILE_SIZE as f32) - 0.5;
+                        let index = get_index_from_position(UVec2::new(pos.x as u32, pos.y as u32));
+                        if i == index {
+                            has_collider = true;
+                            break;
+                        }
+                    }
+                }
 
-                commands.spawn(
-                    (
-                        Name::new("Chunk collider shape"),
-                        Collider::rectangle(TILE_SIZE as f32, TILE_SIZE as f32),
-                        TransformBundle::from_transform(Transform::from_xyz((TILE_SIZE as f32 / 2.0) + pixel_pos.x, (TILE_SIZE as f32 / 2.0) + pixel_pos.y, 0.0))
-                    )
-                ).set_parent(ev.entity);
+                if !has_collider {
+                    let pos = get_position_from_index(i);
+                    let pixel_pos = Vec2::new(pos.x as f32 * TILE_SIZE as f32, pos.y as f32 * TILE_SIZE as f32);
+    
+                    commands.spawn(
+                        (
+                            Name::new(format!("Block Collider at ({}, {})", pos.x, pos.y)),
+                            Collider::rectangle(TILE_SIZE as f32, TILE_SIZE as f32),
+                            TransformBundle::from_transform(Transform::from_xyz((TILE_SIZE as f32 / 2.0) + pixel_pos.x, (TILE_SIZE as f32 / 2.0) + pixel_pos.y, 0.0))
+                        )
+                    ).set_parent(ev.entity);
+                }
             }
         }
     }
