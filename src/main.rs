@@ -5,6 +5,8 @@ mod player;
 mod menu;
 mod world;
 
+use std::{fs, io::ErrorKind};
+
 use bevy::prelude::*;
 use bevy_inspector_egui::quick::WorldInspectorPlugin;
 use bevy_xpbd_2d::prelude::*;
@@ -28,7 +30,7 @@ fn main() {
         .add_plugins(WorldPlugin)
         .add_plugins(MenuPlugin)
 
-        .add_systems(Startup, spawn_camera)
+        .add_systems(Startup, (setup_worlds_folder, spawn_camera).chain())
 
         .run();
 }
@@ -37,4 +39,18 @@ fn spawn_camera(
     mut commands: Commands
 ) {
     commands.spawn(Camera2dBundle::default());
+}
+
+fn setup_worlds_folder() {
+    let dir = fs::read_dir("worlds");        
+
+    if let Err(err) = dir {
+        if err.kind() == ErrorKind::NotFound {
+            if let Err(e) = fs::create_dir("worlds") {
+                error!("An error occurred when creating the worlds folder: {}", e);
+            }
+        } else {
+            error!("An error occurred when checking for worlds directory: {}", err);
+        }
+    }
 }

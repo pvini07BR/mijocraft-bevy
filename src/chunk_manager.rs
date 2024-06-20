@@ -39,7 +39,7 @@ impl Plugin for ChunkManagerPlugin
         app.add_event::<LoadChunks>();
         app.insert_resource(Chunks(HashMap::new()));
         app.add_plugins(ChunkPlugin);
-        app.add_systems(Update, (load_chunks, spawn_chunk, try_to_place_block_event).chain().in_set(GameSystemSet::ChunkManager));
+        app.add_systems(Update, (unload_and_save_chunks, load_chunks, spawn_chunk, try_to_place_block_event).chain().in_set(GameSystemSet::ChunkManager));
     }
 }
 
@@ -181,53 +181,43 @@ fn try_to_place_block_event(
     }
 }
 
-/*
 fn unload_and_save_chunks(
-    mut unload_chunks_ev : EventReader<UnloadChunks>,
-    mut load_chunks_ev: EventWriter<LoadChunks>,
     mut commands: Commands,
-    chunk_query: Query<(Entity, &Chunk, &Children, &ViewVisibility)>,
-    chunk_layer_query: Query<&ChunkLayer>,
+    mut chunks: ResMut<Chunks>,
+    mut unload_chunks_ev: EventReader<UnloadChunks>,
+    mut load_chunks_ev: EventWriter<LoadChunks>,
+    chunk_query: Query<(Entity, &ChunkComponent, &ViewVisibility)>,
     world_info_res: Res<WorldInfo>
 ) {
     for ev in unload_chunks_ev.read() {
         // ===================================
         // Despawn and save chunks out of view
-        for (c_entity, chunk, c_children, c_visibility) in chunk_query.iter() {
+        for (chunk_entity, chunk_compo, chunk_visibility) in chunk_query.iter() {
             // If a chunk is out of view, then save its blocks into a file and despawn the chunk entity
             // Or if force bool is true (unload and load all chunks no matter if its already there)
-            if !c_visibility.get() || ev.force {
-                let mut layers: [serde_big_array::Array<u8, CHUNK_AREA>; 2] = [serde_big_array::Array([0; CHUNK_AREA]); 2];
-                for c in 0..c_children.len() {
-                    if chunk_layer_query.contains(c_children[c]) {
-                        let chunk_layer = chunk_layer_query.get(c_children[c]).unwrap();
-                        layers[c] = serde_big_array::Array(chunk_layer.blocks.clone());
-                    } else { break; }
-                }
-                let s = bincode::serialize(&layers).unwrap();
-                let a = chunk.position;
-                let world_name = world_info_res.name.clone();
-                match std::fs::write(format!("worlds/{}/chunks/{}.bin", world_name, a), &s) {
-                    Err(e) => println!("Error saving chunk at {}: {}", a, e),
-                    _ => {}
-                }
-                /*
-                IoTaskPool::get()
-                .spawn(async move {
+            if !chunk_visibility.get() || ev.force {
+                let mut layers: [serde_big_array::Array<BlockType, CHUNK_AREA>; 2] = [serde_big_array::Array([BlockType::AIR; CHUNK_AREA]); 2];
+                if let Some(chunk) = chunks.get(&chunk_compo.position) {
+                    layers[0] = serde_big_array::Array(chunk.layers[0].clone());
+                    layers[1] = serde_big_array::Array(chunk.layers[1].clone());
+    
+                    let s = bincode::serialize(&layers).unwrap();
+                    let a = chunk_compo.position;
+                    let world_name = world_info_res.name.clone();
                     match std::fs::write(format!("worlds/{}/chunks/{}.bin", world_name, a), &s) {
-                        Err(e) => println!("Error saving chunk at {}: {}", a, e),
+                        Err(e) => error!("Error saving chunk at {}: {}", a, e),
                         _ => {}
                     }
-                }).detach();
-                */
-                commands.entity(c_entity).despawn_recursive();
+    
+                    chunks.remove(&chunk_compo.position);
+                    commands.entity(chunk_entity).despawn_recursive();
+                }
             }
         }
-        
+
         load_chunks_ev.send(LoadChunks {});
     }
 }
-*/
 
 fn load_chunks(
     mut chunks_res: ResMut<Chunks>,
@@ -241,6 +231,7 @@ fn load_chunks(
     // Load chunks from disk
     for _ in load_chunks_ev.read() {
         if let Ok(window) = window_query.get_single() {
+
             let (camera, camera_global_transform) = camera_query.get_single().unwrap();
     
             let top_left = camera.viewport_to_world_2d(camera_global_transform, Vec2::new(0.0, 0.0)).unwrap();
@@ -273,7 +264,7 @@ fn load_chunks(
                                     blocks = layers[1].0;
                                     walls = layers[0].0;
                                 },
-                                Err(e) => println!("Error when trying to load chunk at {}: {}", pos, e)
+                                Err(e) => error!("Error when trying to load chunk at {}: {}", pos, e)
                             }
                         } else {
                             // TODO: This is where world generation goes in!

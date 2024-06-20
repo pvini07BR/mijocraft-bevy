@@ -1,5 +1,7 @@
+use std::fs;
+
 use crate::chunk::{self, BlockType, PlaceMode, CHUNK_WIDTH, TILE_SIZE};
-use crate::chunk_manager::{ChunkManagerPlugin, UnloadChunks, TryPlaceBlock};
+use crate::chunk_manager::{ChunkManagerPlugin, LoadChunks, TryPlaceBlock, UnloadChunks};
 
 use crate::player::{Player, PlayerPlugin};
 
@@ -76,7 +78,7 @@ impl Plugin for WorldPlugin {
                 GameSystemSet::Player
             ).chain().run_if(in_state(GameState::Game)))
 
-            .add_systems(OnEnter(GameState::Game), (set_clear_color, setup).chain().in_set(GameSystemSet::World))
+            .add_systems(OnEnter(GameState::Game), (setup_world_dir, set_clear_color, setup).chain().in_set(GameSystemSet::World))
             .add_systems(Update, 
                (
                     update_cursor,
@@ -88,6 +90,13 @@ impl Plugin for WorldPlugin {
             .add_systems(SubstepSchedule, camera_follow_player.in_set(SubstepSet::ApplyTranslation).run_if(in_state(GameState::Game)))
             ;
     }
+}
+
+fn setup_world_dir(
+    world_res: Res<WorldInfo>
+) {
+    let _ = fs::create_dir(format!("worlds/{}", world_res.name));
+    let _ = fs::create_dir(format!("worlds/{}/chunks", world_res.name));
 }
 
 fn set_clear_color(
@@ -205,12 +214,15 @@ fn camera_follow_player(
 
 fn mouse_scroll_input(
     keyboard_input: Res<ButtonInput<KeyCode>>,
+    //mut unload_chunks_ev: EventWriter<UnloadChunks>,
+    //mut load_chunks_ev: EventWriter<LoadChunks>,
     mut camera_query: Query<&mut Transform, With<Camera2d>>,
     mut cursor_query: Query<&mut BlockCursor>,
     mut cursor_block_icon_q: Query<&mut TextureAtlas, With<CursorBlockIcon>>,
     mut mouse_scroll_event: EventReader<MouseWheel>
 ) {
     const CAMERA_MIN_ZOOM: f32 = 0.05;
+    const CAMERA_MAX_ZOOM: f32 = 2.0;
 
     for ev in mouse_scroll_event.read() {
         if keyboard_input.pressed(KeyCode::ControlLeft) {
@@ -218,13 +230,19 @@ fn mouse_scroll_input(
                 if vec3_a_bigger_than_b(camera_transform.scale, Vec3::splat(CAMERA_MIN_ZOOM)) {
                     if ev.y > 0.0 {
                         camera_transform.scale -= Vec3::splat(0.05);
+                        //unload_chunks_ev.send(UnloadChunks { force: false });
                     }
                 } else {
                     camera_transform.scale = Vec3::splat(CAMERA_MIN_ZOOM);
                 }
-    
-                if ev.y < 0.0 {
-                    camera_transform.scale += Vec3::splat(0.05);
+                
+                if vec3_a_smaller_than_b(camera_transform.scale, Vec3::splat(CAMERA_MAX_ZOOM)) {
+                    if ev.y < 0.0 {
+                        camera_transform.scale += Vec3::splat(0.05);
+                        //load_chunks_ev.send(LoadChunks {});
+                    }
+                } else {
+                    camera_transform.scale = Vec3::splat(CAMERA_MAX_ZOOM);
                 }
             }
         } else {

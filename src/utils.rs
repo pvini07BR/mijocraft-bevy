@@ -12,6 +12,12 @@ pub fn vec3_a_bigger_than_b(a: Vec3, b: Vec3) -> bool {
             a.z > b.z
 }
 
+pub fn vec3_a_smaller_than_b(a: Vec3, b: Vec3) -> bool {
+    return  a.x < b.x &&
+            a.y < b.y &&
+            a.z < b.z
+}
+
 pub fn get_position_from_index(index: usize) -> UVec2 {
     return UVec2::new(
         index as u32 % CHUNK_WIDTH as u32,

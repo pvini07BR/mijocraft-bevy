@@ -1,6 +1,7 @@
 use std::f32::consts::FRAC_PI_2;
 
 use bevy::prelude::*;
+use bevy_inspector_egui::quick::ResourceInspectorPlugin;
 use bevy_xpbd_2d::{components::{LinearVelocity, Position, RigidBody, Rotation}, math::Vector, plugins::{collision::{Collider, Collisions}, spatial_query::{ShapeCaster, ShapeHits}}, SubstepSchedule, SubstepSet};
 
 use crate::{chunk::{ChunkComponent, TILE_SIZE}, chunk_manager::{Chunks, LoadChunks, UnloadChunks}, utils::get_chunk_position, world::GameSystemSet, GameState};
@@ -23,7 +24,8 @@ struct PlayerSprite
     pub rotation: f32
 }
 
-#[derive(Resource)]
+#[derive(Resource, Default, Reflect)]
+#[reflect(Resource)]
 pub struct CurrentChunkPosition {
     pub position: IVec2
 }
@@ -32,6 +34,8 @@ pub struct PlayerPlugin;
 impl Plugin for PlayerPlugin {
     fn build(&self, app: &mut App) {
         app.insert_resource(CurrentChunkPosition { position: IVec2::ZERO });
+        app.register_type::<CurrentChunkPosition>();
+        app.add_plugins(ResourceInspectorPlugin::<CurrentChunkPosition>::default());
         app.add_systems(OnEnter(GameState::Game), spawn_player.in_set(GameSystemSet::Player));
         app.add_systems(Update, 
             (
@@ -96,8 +100,7 @@ fn spawn_player(
         );
     });
 
-    //unload_chunks_ev.send(UnloadChunks { force: true });
-    load_chunks_ev.send(LoadChunks);
+    load_chunks_ev.send(LoadChunks {});
 }
 
 fn update_grounded(
