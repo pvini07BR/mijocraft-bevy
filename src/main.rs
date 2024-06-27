@@ -15,8 +15,8 @@ use world::WorldPlugin;
 
 #[derive(Debug, Clone, Copy, Default, Eq, PartialEq, Hash, States)]
 pub enum GameState {
-    Menu,
     #[default]
+    Menu,
     Game
 }
 
@@ -25,7 +25,7 @@ fn main() {
         .init_state::<GameState>()
         .add_plugins(DefaultPlugins.set(ImagePlugin::default_nearest()))
         .add_plugins(WorldInspectorPlugin::new())
-        .add_plugins(PhysicsDebugPlugin::default())
+        //.add_plugins(PhysicsDebugPlugin::default())
         .add_plugins(PhysicsPlugins::default())
         .add_plugins(WorldPlugin)
         .add_plugins(MenuPlugin)
@@ -35,22 +35,26 @@ fn main() {
         .run();
 }
 
-fn spawn_camera(
-    mut commands: Commands
-) {
-    commands.spawn(Camera2dBundle::default());
-}
-
 fn setup_worlds_folder() {
-    let dir = fs::read_dir("worlds");        
+    let dir = fs::read_dir("worlds");
 
     if let Err(err) = dir {
         if err.kind() == ErrorKind::NotFound {
+            warn!("Could not find the worlds directory. Creating a new one...");
+            warn!("If you already had a worlds directory, please delete the newly created worlds directory");
+            warn!("and check if the game is running on the same directory as the worlds directory.");
+
             if let Err(e) = fs::create_dir("worlds") {
-                error!("An error occurred when creating the worlds folder: {}", e);
+                error!("An error occurred when creating the worlds directory: {}", e);
             }
         } else {
             error!("An error occurred when checking for worlds directory: {}", err);
         }
     }
+}
+
+fn spawn_camera(
+    mut commands: Commands
+) {
+    commands.spawn(Camera2dBundle::default());
 }

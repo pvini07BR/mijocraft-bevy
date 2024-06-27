@@ -1,5 +1,5 @@
-use bevy::{math::*, prelude::Res, utils::HashMap};
-use crate::{chunk::*, chunk_manager::Chunks};
+use bevy::{math::*, utils::HashMap};
+use crate::chunk::*;
 
 pub fn lerp(a: f32, b: f32, f: f32) -> f32
 {

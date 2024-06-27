@@ -49,15 +49,20 @@ impl Plugin for PlayerPlugin {
         );
         app.add_systems(
             SubstepSchedule,
-            solve_collisions.in_set(SubstepSet::SolveUserConstraints).run_if(in_state(GameState::Game)).run_if(is_not_in_noclip),
+            solve_collisions.run_if(is_not_in_noclip).run_if(in_state(GameState::Game)).in_set(SubstepSet::SolveUserConstraints),
         );
     }
 }
 
 fn is_not_in_noclip(
-    player_query: Query<&Player>
+    player_query: Query<&Player>,
+    state: Res<State<GameState>>
 ) -> bool{
-    return !player_query.get_single().unwrap().noclip;
+    if *state.get() == GameState::Game {
+        return !player_query.get_single().unwrap().noclip;
+    } else {
+        return false;
+    }
 }
 
 fn spawn_player(

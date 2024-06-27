@@ -1,5 +1,3 @@
-use std::fs;
-
 use crate::chunk::{self, BlockType, PlaceMode, CHUNK_WIDTH, TILE_SIZE};
 use crate::chunk_manager::{ChunkManagerPlugin, LoadChunks, TryPlaceBlock, UnloadChunks};
 
@@ -10,6 +8,7 @@ use crate::{utils::*, GameState};
 use bevy::{input::mouse::MouseWheel, prelude::*, sprite::SpriteBundle, window::PrimaryWindow};
 use bevy_inspector_egui::quick::ResourceInspectorPlugin;
 use bevy_xpbd_2d::{prelude::*, SubstepSchedule, SubstepSet};
+use serde::{Deserialize, Serialize};
 
 #[derive(SystemSet, Debug, Clone, PartialEq, Eq, Hash)]
 pub enum GameSystemSet {
@@ -19,19 +18,21 @@ pub enum GameSystemSet {
     World
 }
 
-#[derive(Clone, Copy, Debug, PartialEq, Reflect, Default)]
+#[derive(Clone, Copy, Debug, PartialEq, Reflect, Default, Serialize, Deserialize)]
 pub enum WorldGenPreset {
     #[default]
-    EMPTY,
+    DEFAULT,
     FLAT,
-    DEFAULT
+    EMPTY
 }
 
-#[derive(Resource, Default, Reflect)]
+#[derive(Debug, Resource, Default, Reflect, Serialize, Deserialize)]
 #[reflect(Resource)]
 pub struct WorldInfo {
+    pub display_name: String,
     pub name: String,
-    pub preset: WorldGenPreset
+    pub preset: WorldGenPreset,
+    pub last_player_pos: Vec2
 }
 
 #[derive(Component)]
@@ -56,7 +57,7 @@ pub struct WorldPlugin;
 
 impl Plugin for WorldPlugin {
     fn build(&self, app: &mut App) {
-        app.insert_resource(WorldInfo { name: "teste".to_string(), preset: WorldGenPreset::FLAT });
+        app.insert_resource(WorldInfo { display_name: "".to_string(), name: "".to_string(), preset: WorldGenPreset::default(), last_player_pos: Vec2::ZERO });
         app.register_type::<WorldInfo>();
         app.add_plugins(ResourceInspectorPlugin::<WorldInfo>::default());
         
@@ -78,7 +79,7 @@ impl Plugin for WorldPlugin {
                 GameSystemSet::Player
             ).chain().run_if(in_state(GameState::Game)))
 
-            .add_systems(OnEnter(GameState::Game), (setup_world_dir, set_clear_color, setup).chain().in_set(GameSystemSet::World))
+            .add_systems(OnEnter(GameState::Game), (set_clear_color, setup).chain().in_set(GameSystemSet::World))
             .add_systems(Update, 
                (
                     update_cursor,
@@ -90,13 +91,6 @@ impl Plugin for WorldPlugin {
             .add_systems(SubstepSchedule, camera_follow_player.in_set(SubstepSet::ApplyTranslation).run_if(in_state(GameState::Game)))
             ;
     }
-}
-
-fn setup_world_dir(
-    world_res: Res<WorldInfo>
-) {
-    let _ = fs::create_dir(format!("worlds/{}", world_res.name));
-    let _ = fs::create_dir(format!("worlds/{}/chunks", world_res.name));
 }
 
 fn set_clear_color(
@@ -214,8 +208,8 @@ fn camera_follow_player(
 
 fn mouse_scroll_input(
     keyboard_input: Res<ButtonInput<KeyCode>>,
-    //mut unload_chunks_ev: EventWriter<UnloadChunks>,
-    //mut load_chunks_ev: EventWriter<LoadChunks>,
+    mut unload_chunks_ev: EventWriter<UnloadChunks>,
+    mut load_chunks_ev: EventWriter<LoadChunks>,
     mut camera_query: Query<&mut Transform, With<Camera2d>>,
     mut cursor_query: Query<&mut BlockCursor>,
     mut cursor_block_icon_q: Query<&mut TextureAtlas, With<CursorBlockIcon>>,
@@ -239,7 +233,7 @@ fn mouse_scroll_input(
                 if vec3_a_smaller_than_b(camera_transform.scale, Vec3::splat(CAMERA_MAX_ZOOM)) {
                     if ev.y < 0.0 {
                         camera_transform.scale += Vec3::splat(0.05);
-                        //load_chunks_ev.send(LoadChunks {});
+                        //unload_chunks_ev.send(UnloadChunks { force: false });
                     }
                 } else {
                     camera_transform.scale = Vec3::splat(CAMERA_MAX_ZOOM);

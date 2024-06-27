@@ -1,4 +1,4 @@
-use bevy::{math::Vec3A, prelude::*, render::primitives::Aabb, sprite::{Anchor, MaterialMesh2dBundle}, utils::HashMap, window::PrimaryWindow};
+use bevy::{math::{self, Vec3A}, prelude::*, render::primitives::Aabb, sprite::{Anchor, MaterialMesh2dBundle}, utils::HashMap, window::PrimaryWindow};
 use bevy_xpbd_2d::components::RigidBody;
 
 use crate::{chunk::{generate_chunk_layer_mesh, BlockType, CalcLightChunks, Chunk, ChunkComponent, ChunkLayer, ChunkPlugin, PlaceMode, RecollisionChunk, RemeshChunks, CHUNK_AREA, CHUNK_WIDTH, TILE_SIZE}, utils::*, world::{GameSystemSet, WorldGenPreset, WorldInfo}};
@@ -243,7 +243,7 @@ fn load_chunks(
             let c_top_left = get_chunk_position(b_top_left);
             let c_bottom_right = get_chunk_position(b_bottom_right);
             
-            // Had to make it load some extra chunks offscreen
+            // Had to make it load some extra chunksnext_state offscreen
             // to make it truly seamless
             for y in (c_bottom_right.y-1)..(c_top_left.y+2) {
                 for x in (c_top_left.x-1)..(c_bottom_right.x+2) {
@@ -269,6 +269,28 @@ fn load_chunks(
                         } else {
                             // TODO: This is where world generation goes in!
                             match world_info_res.preset {
+                                WorldGenPreset::DEFAULT => {
+                                    if pos.y == 0 {
+                                        for x in 0..CHUNK_WIDTH {
+                                            let mut s = (f32::sin((x as f32 + (pos.x as f32 * CHUNK_WIDTH as f32)) / 6.0) / 2.0) + 0.5;
+                                            s *= CHUNK_WIDTH as f32 / 2.0;
+                                            for y in 0..CHUNK_WIDTH {
+                                                if y as f32 > s {
+                                                    blocks[get_index_from_position(UVec2::new(x as u32, y as u32))] = BlockType::AIR;
+                                                } else {
+                                                    blocks[get_index_from_position(UVec2::new(x as u32, y as u32))] = BlockType::STONE;
+                                                }
+                                            }
+                                        }
+                                    } else if pos.y < 0 {
+                                        for y in 0..CHUNK_WIDTH {
+                                            for x in 0..CHUNK_WIDTH {
+                                                blocks[get_index_from_position(UVec2::new(x as u32, y as u32))] = BlockType::STONE;
+                                            }
+                                        }
+                                    }
+                                },
+
                                 WorldGenPreset::EMPTY => {
                                     if pos == IVec2::ZERO {
                                         for x in 0..(CHUNK_WIDTH/2) {
@@ -304,7 +326,6 @@ fn load_chunks(
                                         walls = [BlockType::STONE; CHUNK_AREA];
                                     }
                                 }
-                                _ => {}
                             }
                         }
                         
