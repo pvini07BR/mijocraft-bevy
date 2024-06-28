@@ -1,6 +1,7 @@
-use bevy::{math::{self, Vec3A}, prelude::*, render::primitives::Aabb, sprite::{Anchor, MaterialMesh2dBundle}, tasks::IoTaskPool, utils::HashMap, window::PrimaryWindow};
+use bevy::{ecs::world, math::{self, Vec3A}, prelude::*, render::primitives::Aabb, sprite::{Anchor, MaterialMesh2dBundle}, tasks::IoTaskPool, utils::HashMap, window::PrimaryWindow};
 use bevy_xpbd_2d::components::RigidBody;
 
+use crate::{player::Player, world::FromWorld, GameState};
 use crate::{chunk::{generate_chunk_layer_mesh, BlockType, CalcLightChunks, Chunk, ChunkComponent, ChunkLayer, ChunkPlugin, PlaceMode, RecollisionChunk, RemeshChunks, CHUNK_AREA, CHUNK_WIDTH, TILE_SIZE}, utils::*, world::{GameSystemSet, WorldGenPreset, WorldInfo}};
 
 #[derive(Event)]
@@ -21,6 +22,12 @@ pub struct UnloadChunks
 pub struct LoadChunks;
 
 #[derive(Event)]
+pub struct SaveAllChunks;
+
+#[derive(Event)]
+pub struct FinishedSavingChunks;
+
+#[derive(Event)]
 pub struct SpawnChunk {
     pub position: IVec2
 }
@@ -37,9 +44,13 @@ impl Plugin for ChunkManagerPlugin
         app.add_event::<SpawnChunk>();
         app.add_event::<UnloadChunks>();
         app.add_event::<LoadChunks>();
+        app.add_event::<SaveAllChunks>();
+        app.add_event::<FinishedSavingChunks>();
+
         app.insert_resource(Chunks(HashMap::new()));
         app.add_plugins(ChunkPlugin);
-        app.add_systems(Update, (unload_and_save_chunks, load_chunks, spawn_chunk, try_to_place_block_event).chain().in_set(GameSystemSet::ChunkManager));
+        app.add_systems(Update, (unload_and_save_chunks, load_chunks, spawn_chunk, try_to_place_block_event, save_all_chunks).chain().in_set(GameSystemSet::ChunkManager));
+        app.add_systems(OnExit(GameState::Game), clear_chunks);
     }
 }
 
@@ -78,6 +89,7 @@ pub fn spawn_chunk(
                 },
                 ShowAabbGizmo {..default()},
                 ChunkComponent {position: ev.position},
+                FromWorld
             )
         ).with_children(|parent| {
             parent.spawn((
@@ -174,6 +186,44 @@ fn try_to_place_block_event(
             }
         }
 
+    }
+}
+
+fn save_all_chunks(
+    player_q: Query<&Transform, With<Player>>,
+    mut save_chunks_ev: EventReader<SaveAllChunks>,
+    mut finished_saving_ev: EventWriter<FinishedSavingChunks>,
+    chunks_res: Res<Chunks>,
+    world_info_res: Res<WorldInfo>
+) {
+    for _ in save_chunks_ev.read() {
+        info!("Saving all chunks...");
+
+        for (pos, chunk) in chunks_res.iter() {
+            let mut layers: [serde_big_array::Array<BlockType, CHUNK_AREA>; 2] = [serde_big_array::Array([BlockType::AIR; CHUNK_AREA]); 2];
+            
+            layers[0] = serde_big_array::Array(chunk.layers[0].clone());
+            layers[1] = serde_big_array::Array(chunk.layers[1].clone());
+
+            let s = bincode::serialize(&layers).unwrap();
+            let a = pos;
+            let world_name = world_info_res.name.clone();
+            match std::fs::write(format!("worlds/{}/chunks/{}.bin", world_name, a), &s) {
+                Err(e) => error!("Error saving chunk at {}: {}", a, e),
+                _ => {}
+            }
+        }
+
+        if let Ok(player_transform) = player_q.get_single() {
+            let mut new_info = world_info_res.clone();
+            new_info.last_player_pos = player_transform.translation.xy();
+
+            if let Ok(str) = toml::to_string(&new_info) {
+                let _ = std::fs::write(format!("worlds/{}/world.toml", new_info.name), str);
+            }
+        }
+
+        finished_saving_ev.send(FinishedSavingChunks);
     }
 }
 
@@ -334,4 +384,10 @@ fn load_chunks(
             }
         }
     }
+}
+
+fn clear_chunks(
+    mut chunks_res: ResMut<Chunks>
+) {
+    chunks_res.clear();
 }

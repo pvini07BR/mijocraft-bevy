@@ -1,12 +1,12 @@
 use crate::chunk::{self, BlockType, PlaceMode, CHUNK_WIDTH, TILE_SIZE};
-use crate::chunk_manager::{ChunkManagerPlugin, LoadChunks, TryPlaceBlock, UnloadChunks};
+use crate::chunk_manager::{ChunkManagerPlugin, FinishedSavingChunks, LoadChunks, SaveAllChunks, TryPlaceBlock, UnloadChunks};
 
 use crate::player::{Player, PlayerPlugin};
 
 use crate::{utils::*, GameState};
 
+use bevy::ui::FocusPolicy;
 use bevy::{input::mouse::MouseWheel, prelude::*, sprite::SpriteBundle, window::PrimaryWindow};
-use bevy_inspector_egui::quick::ResourceInspectorPlugin;
 use bevy_xpbd_2d::{prelude::*, SubstepSchedule, SubstepSet};
 use serde::{Deserialize, Serialize};
 use sickle_ui::prelude::*;
@@ -45,6 +45,13 @@ struct BlockCursor {
     chunk_position: IVec2
 }
 
+#[derive(Debug, Clone, Copy, Default, Eq, PartialEq, Hash, States)]
+pub enum InGameState {
+    #[default]
+    Running,
+    Paused
+}
+
 #[derive(Component)]
 struct CursorBlockIcon;
 
@@ -52,7 +59,16 @@ struct CursorBlockIcon;
 struct CursorPlaceModeIcon;
 
 #[derive(Component)]
-struct FromWorld;
+pub struct FromWorld;
+
+#[derive(Component)]
+struct PauseGUI;
+
+#[derive(Component)]
+struct ResumeButton;
+
+#[derive(Component)]
+struct QuitAndSaveButton;
 
 pub struct WorldPlugin;
 
@@ -60,6 +76,8 @@ impl Plugin for WorldPlugin {
     fn build(&self, app: &mut App) {
         app.insert_resource(WorldInfo { display_name: "".to_string(), name: "".to_string(), preset: WorldGenPreset::default(), last_player_pos: Vec2::ZERO });
         app.register_type::<WorldInfo>();
+
+        app.init_state::<InGameState>();
         
         app.insert_resource(Gravity(Vec2::NEG_Y * (9.81 * TILE_SIZE as f32)))
             .add_plugins(ChunkManagerPlugin)
@@ -70,13 +88,13 @@ impl Plugin for WorldPlugin {
                 GameSystemSet::ChunkManager,
                 GameSystemSet::Player,
                 GameSystemSet::World
-            ).chain().run_if(in_state(GameState::Game)))
+            ).chain().run_if(in_state(InGameState::Running)).run_if(in_state(GameState::Game)))
 
             .configure_sets(Update, (
                 GameSystemSet::ChunkManager,
                 GameSystemSet::Chunk,
-                GameSystemSet::World,
-                GameSystemSet::Player
+                GameSystemSet::World.run_if(in_state(InGameState::Running)),
+                GameSystemSet::Player.run_if(in_state(InGameState::Running))
             ).chain().run_if(in_state(GameState::Game)))
 
             .add_systems(OnEnter(GameState::Game), (set_clear_color, setup_ui, setup).chain().in_set(GameSystemSet::World))
@@ -88,8 +106,27 @@ impl Plugin for WorldPlugin {
                     mouse_scroll_input,
                     force_reload_chunks
                 ).in_set(GameSystemSet::World))
-            .add_systems(SubstepSchedule, camera_follow_player.in_set(SubstepSet::ApplyTranslation).run_if(in_state(GameState::Game)))
-            ;
+            .add_systems(Update, 
+                // The pause input system will be ran in both running and paused states
+                pause_input
+            )
+            .add_systems(Update, 
+                (
+                    on_resume_pressed,
+                    on_quit_and_save_pressed,
+                    on_finished_saving_chunks,
+                    button_system
+                ).run_if(in_state(InGameState::Paused))
+            )
+            .add_systems(SubstepSchedule, camera_follow_player
+                .in_set(SubstepSet::ApplyTranslation)
+                .run_if(in_state(InGameState::Running))
+                .run_if(in_state(GameState::Game)))
+
+            .add_systems(OnEnter(InGameState::Paused), (on_pause, |mut time: ResMut<Time<Physics>>| time.pause()))
+            .add_systems(OnExit(InGameState::Paused), (exit_pause, |mut time: ResMut<Time<Physics>>| time.unpause()))
+
+            .add_systems(OnExit(GameState::Game), destroy_game);
     }
 }
 
@@ -104,19 +141,138 @@ fn setup_ui(
     mut commands: Commands,
     asset_server: Res<AssetServer>
 ) {
-    commands.ui_builder(UiRoot).row(|row| {
-        row.named("GUI");
-        row.insert(FromWorld);
-        row.spawn(
-            TextBundle::from_section(
-                "teste",
-                TextStyle {
-                    color: Color::WHITE,
+    commands.ui_builder(UiRoot).container(NodeBundle { ..default() }, |pause| {
+        pause.named("Pause GUI");
+        pause.insert(Visibility::Hidden);
+        pause.insert(FocusPolicy::Block);
+        pause.insert(FromWorld);
+        pause.insert(PauseGUI);
+        pause.style()
+            .background_color(Color::rgba(0.0, 0.0, 0.0, 0.75))
+            .width(Val::Percent(100.0))
+            .height(Val::Percent(100.0))
+            .justify_content(JustifyContent::Center)
+            .align_items(AlignItems::Center)
+        ;
+
+        pause.column(|items| {
+            items.style()
+                .height(Val::Auto)
+                .align_items(AlignItems::Center)
+            ;
+
+            let font = asset_server.load("fonts/nokiafc22.ttf");
+            let button_style = Style {
+                width: Val::Px(200.0),
+                min_height: Val::Px(65.0),
+                border: UiRect::all(Val::Px(5.0)),
+                margin: UiRect::all(Val::Px(5.0)),
+                justify_content: JustifyContent::Center,
+                align_items: AlignItems::Center,
+                ..default()
+            };
+
+            items.spawn(
+                TextBundle::from_section("PAUSED", TextStyle {
                     font: asset_server.load("fonts/nokiafc22.ttf"),
-                    font_size: 40.0
+                    font_size: 120.0,
+                    color: Color::WHITE
+                }).with_text_justify(JustifyText::Center)
+            ).style().align_self(AlignSelf::Center);
+
+            items.spawn(
+                NodeBundle {
+                    style: Style {
+                        width: Val::Percent(100.0),
+                        min_height: Val::Px(60.0),
+                        ..default()
+                    },
+                    ..default()
                 }
-            )
-        );
+            );
+
+            items.spawn((
+                Name::new("Resume Game Button"),
+                ButtonBundle {
+                    style: button_style.clone(),
+                    border_color: BorderColor(Color::WHITE),
+                    background_color: BackgroundColor(Color::BLACK),
+                    ..default()
+                },
+                ResumeButton
+            )).entity_commands().with_children(|parent| {
+                parent.spawn(
+                    TextBundle::from_section(
+                    "Resume",
+                    TextStyle {
+                        font: font.clone(),
+                        font_size: 40.0,
+                        color: Color::WHITE,
+                    },
+                ).with_text_justify(JustifyText::Center));
+            });
+
+            items.spawn((
+                Name::new("Player Customization Button"),
+                ButtonBundle {
+                    style: button_style.clone(),
+                    border_color: BorderColor(Color::WHITE),
+                    background_color: BackgroundColor(Color::BLACK),
+                    ..default()
+                }
+            )).entity_commands().with_children(|parent| {
+                parent.spawn(
+                    TextBundle::from_section(
+                    "Player Customization",
+                    TextStyle {
+                        font: font.clone(),
+                        font_size: 24.0,
+                        color: Color::WHITE,
+                    },
+                ).with_text_justify(JustifyText::Center));
+            });
+    
+            items.spawn((
+                Name::new("Settings Button"),
+                ButtonBundle {
+                    style: button_style.clone(),
+                    border_color: BorderColor(Color::WHITE),
+                    background_color: BackgroundColor(Color::BLACK),
+                    ..default()
+                }
+            )).entity_commands().with_children(|parent| {
+                parent.spawn(
+                    TextBundle::from_section(
+                    "Settings",
+                    TextStyle {
+                        font: font.clone(),
+                        font_size: 40.0,
+                        color: Color::WHITE,
+                    },
+                ).with_text_justify(JustifyText::Center));
+            });
+
+            items.spawn((
+                Name::new("Quit and Save World Button"),
+                ButtonBundle {
+                    style: button_style,
+                    border_color: BorderColor(Color::WHITE),
+                    background_color: BackgroundColor(Color::BLACK),
+                    ..default()
+                },
+                QuitAndSaveButton
+            )).entity_commands().with_children(|parent| {
+                parent.spawn(
+                    TextBundle::from_section(
+                    "Quit & Save",
+                    TextStyle {
+                        font: font.clone(),
+                        font_size: 30.0,
+                        color: Color::WHITE,
+                    },
+                ).with_text_justify(JustifyText::Center));
+            });
+        });
     });
 }
 
@@ -189,6 +345,72 @@ fn setup(
         ));
     });
 }
+
+fn destroy_game(
+    mut commands: Commands,
+    world_q: Query<Entity, With<FromWorld>>,
+    mut camera_q: Query<&mut Camera>,
+    mut ingame_state: ResMut<NextState<InGameState>>
+) {
+    ingame_state.set(InGameState::Running);
+
+    let mut camera = camera_q.single_mut();
+    camera.clear_color = ClearColorConfig::Default;
+
+    for entity in world_q.iter() {
+        commands.entity(entity).despawn_recursive();
+    }
+}
+
+fn pause_input(
+    keyboard_input: Res<ButtonInput<KeyCode>>,
+    cur_state: Res<State<InGameState>>,
+    mut pause: ResMut<NextState<InGameState>>
+) {
+    if keyboard_input.just_pressed(KeyCode::Escape) {
+        match cur_state.get() {
+            InGameState::Running => pause.set(InGameState::Paused),
+            InGameState::Paused => pause.set(InGameState::Running),
+        }
+    }
+}
+
+fn on_pause(
+    mut menu_q: Query<&mut Visibility, With<PauseGUI>>,
+    mut cursor_q: Query<&mut Visibility, (With<BlockCursor>, Without<CursorBlockIcon>, Without<PauseGUI>)>,
+    mut cursor_block_icon_q: Query<&mut Visibility, (With<CursorBlockIcon>, Without<BlockCursor>, Without<PauseGUI>)>,
+) {
+    if let Ok(mut menu_visibility) = menu_q.get_single_mut() {
+        *menu_visibility = Visibility::Visible;
+    }
+
+    if let Ok(mut cursor_vis) = cursor_q.get_single_mut() {
+        *cursor_vis = Visibility::Hidden;
+    }
+
+    if let Ok(mut cursor_icon_vis) = cursor_block_icon_q.get_single_mut() {
+        *cursor_icon_vis = Visibility::Hidden;
+    }
+}
+
+fn exit_pause(
+    mut menu_q: Query<&mut Visibility, With<PauseGUI>>,
+    mut cursor_q: Query<&mut Visibility, (With<BlockCursor>, Without<CursorBlockIcon>, Without<PauseGUI>)>,
+    mut cursor_block_icon_q: Query<&mut Visibility, (With<CursorBlockIcon>, Without<BlockCursor>, Without<PauseGUI>)>,
+) {
+    if let Ok(mut menu_visibility) = menu_q.get_single_mut() {
+        *menu_visibility = Visibility::Hidden;
+    }
+
+    if let Ok(mut cursor_vis) = cursor_q.get_single_mut() {
+        *cursor_vis = Visibility::Visible;
+    }
+
+    if let Ok(mut cursor_icon_vis) = cursor_block_icon_q.get_single_mut() {
+        *cursor_icon_vis = Visibility::Visible;
+    }
+}
+
 
 fn block_input(
     cursor_q: Query<&BlockCursor>,
@@ -355,5 +577,77 @@ fn force_reload_chunks(
 ) {
     if keyboard_input.just_pressed(KeyCode::F5) {
         unload_chunks_ev.send(UnloadChunks {force: true});
+    }
+}
+
+fn button_system(
+    mut interaction_query: Query<
+        (
+            &Interaction,
+            &mut BackgroundColor,
+            &mut BorderColor,
+            &Children
+        ),
+        (Changed<Interaction>, With<Button>),
+    >,
+    mut text_query: Query<&mut Text>,
+) {
+    for (interaction, mut color, mut border_color, children) in &mut interaction_query {
+        if let Ok(mut text) = text_query.get_mut(children[0]) {
+            match *interaction {
+                Interaction::None => {
+                    *color = BackgroundColor(Color::BLACK);
+                    border_color.0 = Color::WHITE;
+                    text.sections[0].style.color = Color::WHITE;
+                },
+                Interaction::Hovered => {
+                    *color = BackgroundColor(Color::GRAY);
+                    border_color.0 = Color::WHITE;
+                    text.sections[0].style.color = Color::WHITE;
+                }
+                Interaction::Pressed => {
+                    *color = BackgroundColor(Color::WHITE);
+                    border_color.0 = Color::BLACK;
+                    text.sections[0].style.color = Color::BLACK;
+                },
+            }
+        }
+    }
+}
+
+fn on_resume_pressed(
+    inter_q: Query<&Interaction, With<ResumeButton>>,
+    mut state: ResMut<NextState<InGameState>>,
+    input: Res<ButtonInput<MouseButton>>
+) {
+    if let Ok(inter) = inter_q.get_single() {
+        if input.just_released(MouseButton::Left) {
+            if *inter == Interaction::Hovered || *inter == Interaction::Pressed {
+                state.set(InGameState::Running);
+            }
+        }
+    }
+}
+
+fn on_quit_and_save_pressed(
+    inter_q: Query<&Interaction, With<QuitAndSaveButton>>,
+    input: Res<ButtonInput<MouseButton>>,
+    mut save_chunks_ev: EventWriter<SaveAllChunks>
+) {
+    if let Ok(inter) = inter_q.get_single() {
+        if input.just_released(MouseButton::Left) {
+            if *inter == Interaction::Hovered || *inter == Interaction::Pressed {
+                save_chunks_ev.send(SaveAllChunks);
+            }
+        }
+    }
+}
+
+fn on_finished_saving_chunks(
+    mut fin_save_chunks_ev: EventReader<FinishedSavingChunks>,
+    mut state: ResMut<NextState<GameState>>
+) {
+    for _ in fin_save_chunks_ev.read() {
+        state.set(GameState::Menu);
     }
 }

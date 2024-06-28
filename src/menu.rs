@@ -1,6 +1,6 @@
 use std::fs;
 
-use bevy::{prelude::*, ui::FocusPolicy};
+use bevy::{app::AppExit, prelude::*, ui::FocusPolicy};
 use bevy_simple_text_input::{TextInputBundle, TextInputInactive, TextInputPlugin, TextInputSettings, TextInputValue};
 use filenamify::filenamify;
 use sickle_ui::{prelude::*, SickleUiPlugin};
@@ -8,6 +8,9 @@ use crate::{world::{WorldGenPreset, WorldInfo}, GameState};
 
 #[derive(Component)]
 struct PlayButton;
+
+#[derive(Component)]
+struct QuitButton;
 
 #[derive(Component)]
 struct PlaySelectedWorldButton;
@@ -88,6 +91,7 @@ impl Plugin for MenuPlugin {
         app.add_systems(Update, (
             button_system,
             on_play_button_pressed,
+            on_exit_pressed,
             world_list_entry_system,
             on_exit_world_selection_pressed,
             on_play_selected_world_pressed,
@@ -109,9 +113,9 @@ impl Plugin for MenuPlugin {
 }
 
 fn setup_menu(
-
+    mut menu_state: ResMut<NextState<InMenuState>>
 ) {
-
+    menu_state.set(InMenuState::Default);
 }
 
 fn destroy_menu(
@@ -199,13 +203,33 @@ fn setup_default_menu(
                             font_size: 40.0,
                             color: Color::WHITE,
                         },
-                    ));
+                    ).with_text_justify(JustifyText::Center));
+                });
+
+                container.spawn((
+                    Name::new("Player Customization Button"),
+                    ButtonBundle {
+                        style: button_style.clone(),
+                        border_color: BorderColor(Color::WHITE),
+                        background_color: BackgroundColor(Color::BLACK),
+                        ..default()
+                    }
+                )).entity_commands().with_children(|parent| {
+                    parent.spawn(
+                        TextBundle::from_section(
+                        "Player Customization",
+                        TextStyle {
+                            font: font.clone(),
+                            font_size: 24.0,
+                            color: Color::WHITE,
+                        },
+                    ).with_text_justify(JustifyText::Center));
                 });
         
                 container.spawn((
                     Name::new("Settings Button"),
                     ButtonBundle {
-                        style: button_style,
+                        style: button_style.clone(),
                         border_color: BorderColor(Color::WHITE),
                         background_color: BackgroundColor(Color::BLACK),
                         ..default()
@@ -219,7 +243,28 @@ fn setup_default_menu(
                             font_size: 40.0,
                             color: Color::WHITE,
                         },
-                    ));
+                    ).with_text_justify(JustifyText::Center));
+                });
+
+                container.spawn((
+                    Name::new("Quit Button"),
+                    ButtonBundle {
+                        style: button_style,
+                        border_color: BorderColor(Color::WHITE),
+                        background_color: BackgroundColor(Color::BLACK),
+                        ..default()
+                    },
+                    QuitButton
+                )).entity_commands().with_children(|parent| {
+                    parent.spawn(
+                        TextBundle::from_section(
+                        "Quit",
+                        TextStyle {
+                            font: font.clone(),
+                            font_size: 40.0,
+                            color: Color::WHITE,
+                        },
+                    ).with_text_justify(JustifyText::Center));
                 });
             });
         });
@@ -557,6 +602,20 @@ fn on_play_button_pressed(
     }
 }
 
+fn on_exit_pressed(
+    inter_q: Query<&Interaction, With<QuitButton>>,
+    input: Res<ButtonInput<MouseButton>>,
+    mut exit: EventWriter<AppExit>
+) {
+    if let Ok(inter) = inter_q.get_single() {
+        if input.just_released(MouseButton::Left) {
+            if *inter == Interaction::Hovered || *inter == Interaction::Pressed {
+                exit.send(AppExit);
+            }
+        }
+    }
+}
+
 fn on_exit_world_selection_pressed(
     inter_q: Query<&Interaction, With<ExitWorldSelectionScreenButton>>,
     mut state: ResMut<NextState<InMenuState>>,
@@ -674,7 +733,7 @@ fn on_create_world_and_play_pressed(
                     display_name: text_input.0.clone(),
                     name: world_name.clone(),
                     preset,
-                    last_player_pos: Vec2::ZERO
+                    last_player_pos: Vec2::new(16.0, 256.0)
                 };
 
                 if let Err(e) = fs::create_dir(format!("worlds/{}", world_name.clone())) {

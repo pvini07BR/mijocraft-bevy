@@ -4,6 +4,7 @@ use bevy::prelude::*;
 use bevy_inspector_egui::quick::ResourceInspectorPlugin;
 use bevy_xpbd_2d::{components::{LinearVelocity, Position, RigidBody, Rotation}, math::Vector, plugins::{collision::{Collider, Collisions}, spatial_query::{ShapeCaster, ShapeHits}}, SubstepSchedule, SubstepSet};
 
+use crate::world::{FromWorld, WorldInfo};
 use crate::{chunk::{ChunkComponent, TILE_SIZE}, chunk_manager::{Chunks, LoadChunks, UnloadChunks}, utils::{get_chunk_position, get_index_from_position, get_relative_position}, world::GameSystemSet, GameState};
 use crate::utils::lerp;
 
@@ -59,7 +60,7 @@ impl Plugin for PlayerPlugin {
         );
         app.add_systems(
             SubstepSchedule,
-            solve_collisions.run_if(is_not_in_noclip).run_if(in_state(GameState::Game)).in_set(SubstepSet::SolveUserConstraints),
+            solve_collisions.run_if(is_not_in_noclip).run_if(in_state(GameState::Game)).in_set(SubstepSet::SolveUserConstraints).in_set(GameSystemSet::Player),
         );
     }
 }
@@ -78,7 +79,8 @@ fn is_not_in_noclip(
 fn spawn_player(
     mut commands: Commands,
     mut load_chunks_ev : EventWriter<LoadChunks>,
-    player_settings: Res<PlayerSettings>
+    player_settings: Res<PlayerSettings>,
+    world_info_res: Res<WorldInfo>
 ) {
     let player_collider = Collider::rectangle(PLAYER_SIZE, PLAYER_SIZE);
 
@@ -94,10 +96,11 @@ fn spawn_player(
                     color: Color::rgba(0.0, 0.0, 0.0, 0.0),
                     ..default()
                 },
-                transform: Transform::from_xyz(16.0, 50.0, 1.0),
+                transform: Transform::from_xyz(world_info_res.last_player_pos.x, world_info_res.last_player_pos.y, 1.0),
                 ..default()
             },
-            Player {is_on_ground: false, direction: 0, noclip: false }
+            Player {is_on_ground: false, direction: 0, noclip: false },
+            FromWorld
         )
     ).with_children(|parent| {
         parent.spawn(
