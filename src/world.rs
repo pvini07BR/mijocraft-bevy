@@ -97,7 +97,7 @@ impl Plugin for WorldPlugin {
                 GameSystemSet::Player.run_if(in_state(InGameState::Running))
             ).chain().run_if(in_state(GameState::Game)))
 
-            .add_systems(OnEnter(GameState::Game), (set_clear_color, setup_ui, setup).chain().in_set(GameSystemSet::World))
+            .add_systems(OnEnter(GameState::Game), (config_camera, setup_ui, setup).chain().in_set(GameSystemSet::World))
             .add_systems(Update, 
                (
                     update_cursor,
@@ -130,11 +130,15 @@ impl Plugin for WorldPlugin {
     }
 }
 
-fn set_clear_color(
-    mut camera_q: Query<&mut Camera>
+fn config_camera(
+    mut camera_q: Query<(&mut Camera, &mut Transform)>,
+    world_info: Res<WorldInfo>
 ) {
-    let mut camera = camera_q.single_mut();
+    let (mut camera, mut camera_transform) = camera_q.single_mut();
     camera.clear_color = ClearColorConfig::Custom(Color::rgb(0.48, 0.48, 0.67));
+
+    camera_transform.translation.x = world_info.last_player_pos.x;
+    camera_transform.translation.y = world_info.last_player_pos.y;
 }
 
 fn setup_ui(
@@ -349,13 +353,15 @@ fn setup(
 fn destroy_game(
     mut commands: Commands,
     world_q: Query<Entity, With<FromWorld>>,
-    mut camera_q: Query<&mut Camera>,
+    mut camera_q: Query<(&mut Camera, &mut Transform)>,
     mut ingame_state: ResMut<NextState<InGameState>>
 ) {
     ingame_state.set(InGameState::Running);
 
-    let mut camera = camera_q.single_mut();
+    let (mut camera, mut camera_transform) = camera_q.single_mut();
     camera.clear_color = ClearColorConfig::Default;
+    camera_transform.translation.x = 0.0;
+    camera_transform.translation.y = 0.0;
 
     for entity in world_q.iter() {
         commands.entity(entity).despawn_recursive();
