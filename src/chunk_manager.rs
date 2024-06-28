@@ -1,4 +1,4 @@
-use bevy::{math::{self, Vec3A}, prelude::*, render::primitives::Aabb, sprite::{Anchor, MaterialMesh2dBundle}, utils::HashMap, window::PrimaryWindow};
+use bevy::{math::{self, Vec3A}, prelude::*, render::primitives::Aabb, sprite::{Anchor, MaterialMesh2dBundle}, tasks::IoTaskPool, utils::HashMap, window::PrimaryWindow};
 use bevy_xpbd_2d::components::RigidBody;
 
 use crate::{chunk::{generate_chunk_layer_mesh, BlockType, CalcLightChunks, Chunk, ChunkComponent, ChunkLayer, ChunkPlugin, PlaceMode, RecollisionChunk, RemeshChunks, CHUNK_AREA, CHUNK_WIDTH, TILE_SIZE}, utils::*, world::{GameSystemSet, WorldGenPreset, WorldInfo}};
@@ -55,7 +55,7 @@ pub fn spawn_chunk(
 ) {
     for ev in spawn_chunk_ev.read() {
 
-        let pixel_chunk_pos = Vec2::new((ev.position.x as f32 * CHUNK_WIDTH as f32) * TILE_SIZE as f32, (ev.position.y as f32 * CHUNK_WIDTH as f32) * TILE_SIZE as f32);
+        let pixel_chunk_pos = ev.position.as_vec2() * CHUNK_WIDTH as f32 * TILE_SIZE as f32;
         let chunk_material_handle = materials.add(asset_server.load("textures/blocks.png"));
         
         let id = commands.spawn(
@@ -138,24 +138,20 @@ fn try_to_place_block_event(
                 if chunk.layers[ev.layer as usize][index] <= BlockType::AIR {
                     match ev.layer {
                         PlaceMode::BLOCK => {
-                            if let Some(bn) = block_neighbors {
-                                if let Some(wn) = wall_neighbors {
-                                    if wn[0] > BlockType::AIR ||
-                                        bn[1] > BlockType::AIR || bn[2] > BlockType::AIR || bn[3] > BlockType::AIR || bn[4] > BlockType::AIR
-                                    {
-                                        chunk.layers[PlaceMode::BLOCK as usize][index] = ev.id;
-                                    }
+                            if let (Some(bn), Some(wn)) = (block_neighbors, wall_neighbors) {
+                                if wn[0] > BlockType::AIR ||
+                                    bn[1] > BlockType::AIR || bn[2] > BlockType::AIR || bn[3] > BlockType::AIR || bn[4] > BlockType::AIR
+                                {
+                                    chunk.layers[PlaceMode::BLOCK as usize][index] = ev.id;
                                 }
                             }
                         },
                         PlaceMode::WALL => {
-                            if let Some(bn) = block_neighbors {
-                                if let Some(wn) = wall_neighbors {
-                                    if bn[0] > BlockType::AIR || bn[1] > BlockType::AIR || bn[2] > BlockType::AIR || bn[3] > BlockType::AIR || bn[4] > BlockType::AIR ||
-                                        wn[1] > BlockType::AIR || wn[2] > BlockType::AIR || wn[3] > BlockType::AIR || wn[4] > BlockType::AIR
-                                    {
-                                        chunk.layers[PlaceMode::WALL as usize][index] = ev.id;
-                                    }
+                            if let (Some(bn), Some(wn)) = (block_neighbors, wall_neighbors) {
+                                if bn[0] > BlockType::AIR || bn[1] > BlockType::AIR || bn[2] > BlockType::AIR || bn[3] > BlockType::AIR || bn[4] > BlockType::AIR ||
+                                    wn[1] > BlockType::AIR || wn[2] > BlockType::AIR || wn[3] > BlockType::AIR || wn[4] > BlockType::AIR
+                                {
+                                    chunk.layers[PlaceMode::WALL as usize][index] = ev.id;
                                 }
                             }
                         }
@@ -204,10 +200,12 @@ fn unload_and_save_chunks(
                     let s = bincode::serialize(&layers).unwrap();
                     let a = chunk_compo.position;
                     let world_name = world_info_res.name.clone();
-                    match std::fs::write(format!("worlds/{}/chunks/{}.bin", world_name, a), &s) {
-                        Err(e) => error!("Error saving chunk at {}: {}", a, e),
-                        _ => {}
-                    }
+                    IoTaskPool::get().spawn(async move {
+                        match std::fs::write(format!("worlds/{}/chunks/{}.bin", world_name, a), &s) {
+                            Err(e) => error!("Error saving chunk at {}: {}", a, e),
+                            _ => {}
+                        }
+                    }).detach();
     
                     chunks.remove(&chunk_compo.position);
                     commands.entity(chunk_entity).despawn_recursive();

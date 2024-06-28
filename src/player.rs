@@ -4,7 +4,7 @@ use bevy::prelude::*;
 use bevy_inspector_egui::quick::ResourceInspectorPlugin;
 use bevy_xpbd_2d::{components::{LinearVelocity, Position, RigidBody, Rotation}, math::Vector, plugins::{collision::{Collider, Collisions}, spatial_query::{ShapeCaster, ShapeHits}}, SubstepSchedule, SubstepSet};
 
-use crate::{chunk::{ChunkComponent, TILE_SIZE}, chunk_manager::{Chunks, LoadChunks, UnloadChunks}, utils::get_chunk_position, world::GameSystemSet, GameState};
+use crate::{chunk::{ChunkComponent, TILE_SIZE}, chunk_manager::{Chunks, LoadChunks, UnloadChunks}, utils::{get_chunk_position, get_index_from_position, get_relative_position}, world::GameSystemSet, GameState};
 use crate::utils::lerp;
 
 const PLAYER_SIZE: f32 = 28.0;
@@ -24,6 +24,13 @@ struct PlayerSprite
     pub rotation: f32
 }
 
+#[derive(Resource, Reflect, Default)]
+#[reflect(Resource)]
+pub struct PlayerSettings {
+    pub nickname: String,
+    pub color: Color
+}
+
 #[derive(Resource, Default, Reflect)]
 #[reflect(Resource)]
 pub struct CurrentChunkPosition {
@@ -35,7 +42,9 @@ impl Plugin for PlayerPlugin {
     fn build(&self, app: &mut App) {
         app.insert_resource(CurrentChunkPosition { position: IVec2::ZERO });
         app.register_type::<CurrentChunkPosition>();
-        app.add_plugins(ResourceInspectorPlugin::<CurrentChunkPosition>::default());
+        app.insert_resource(PlayerSettings { nickname: "Player".to_string(), color: Color::RED });
+        app.register_type::<PlayerSettings>();
+        app.add_plugins(ResourceInspectorPlugin::<PlayerSettings>::default());
         app.add_systems(OnEnter(GameState::Game), spawn_player.in_set(GameSystemSet::Player));
         app.add_systems(Update, 
             (
@@ -44,7 +53,8 @@ impl Plugin for PlayerPlugin {
                 update_grounded,
                 rotate_player,
                 set_chunk_pos,
-                stop_player_at_invalid_chunk
+                stop_player_at_invalid_chunk,
+                darken_player
             ).chain().in_set(GameSystemSet::Player)
         );
         app.add_systems(
@@ -67,7 +77,8 @@ fn is_not_in_noclip(
 
 fn spawn_player(
     mut commands: Commands,
-    mut load_chunks_ev : EventWriter<LoadChunks>
+    mut load_chunks_ev : EventWriter<LoadChunks>,
+    player_settings: Res<PlayerSettings>
 ) {
     let player_collider = Collider::rectangle(PLAYER_SIZE, PLAYER_SIZE);
 
@@ -80,7 +91,7 @@ fn spawn_player(
             SpriteBundle {
                 sprite: Sprite {
                     custom_size: Some(Vec2::splat(PLAYER_SIZE)),
-                    color: Color::rgba(1.0, 1.0, 1.0, 0.0),
+                    color: Color::rgba(0.0, 0.0, 0.0, 0.0),
                     ..default()
                 },
                 transform: Transform::from_xyz(16.0, 50.0, 1.0),
@@ -95,7 +106,7 @@ fn spawn_player(
                 SpriteBundle {
                     sprite: Sprite {
                         custom_size: Some(Vec2::splat(PLAYER_SIZE)),
-                        color: Color::RED,
+                        color: player_settings.color,
                         ..default()
                     },
                     ..default()
@@ -275,5 +286,25 @@ fn stop_player_at_invalid_chunk(
     if let Ok(mut player_vel) = player_query.get_single_mut() {
         player_vel.x = 0.0;
         player_vel.y = 0.0;
+    }
+}
+
+fn darken_player(
+    player_query: Query<&Transform, With<Player>>,
+    mut player_sprite_query: Query<&mut Sprite, With<PlayerSprite>>,
+    chunk_pos_res: Res<CurrentChunkPosition>,
+    chunks_res: Res<Chunks>,
+    player_settings: Res<PlayerSettings>
+) {
+    if let Ok(mut player_sprite) = player_sprite_query.get_single_mut() {
+        if let Ok(player_transform) = player_query.get_single() {
+            if let Some(chunk) = chunks_res.get(&chunk_pos_res.position) {
+                let player_pos_in_pixels = player_transform.translation.xy();
+                let player_position = IVec2::new((player_pos_in_pixels.x / TILE_SIZE as f32).floor() as i32, (player_pos_in_pixels.y / TILE_SIZE as f32).floor() as i32);
+                let relative = get_relative_position(player_position, chunk_pos_res.position);
+    
+                player_sprite.color = player_settings.color * (chunk.light[get_index_from_position(relative)] as f32 / 15.0);
+            }
+        }
     }
 }

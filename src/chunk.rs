@@ -150,14 +150,11 @@ fn remesh(
                 if let Ok(layer_mesh) = chunk_layer_query.get(chunk_children[li]) {
                     let mesh = meshes.get_mut(layer_mesh.0.id()).unwrap();
     
-                    let mut vertex_positions: Vec<[f32; 3]> = Vec::with_capacity(CHUNK_MESH_SIZE);
-                    for _ in 0..CHUNK_MESH_SIZE { vertex_positions.push([0.0, 0.0, 0.0]); }
-                
-                    let mut vertex_colors: Vec<[f32; 4]> = Vec::with_capacity(CHUNK_MESH_SIZE);
-                    for _ in 0..CHUNK_MESH_SIZE { vertex_colors.push([0.0, 0.0, 0.0, 0.0]); }
-        
-                    let mut vertex_uvs: Vec<[f32; 2]> = Vec::with_capacity(CHUNK_MESH_SIZE);
-                    for _ in 0..CHUNK_MESH_SIZE { vertex_uvs.push([0.0, 0.0]); }
+                    let mut vertex_positions = vec![[0.0; 3]; CHUNK_MESH_SIZE];
+                    
+                    let mut vertex_colors = vec![[0.0; 4]; CHUNK_MESH_SIZE];
+                    
+                    let mut vertex_uvs = vec![[0.0; 2]; CHUNK_MESH_SIZE];
     
                     let indices: Vec<u32> = generate_chunk_indices();
         

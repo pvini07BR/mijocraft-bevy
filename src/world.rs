@@ -9,6 +9,7 @@ use bevy::{input::mouse::MouseWheel, prelude::*, sprite::SpriteBundle, window::P
 use bevy_inspector_egui::quick::ResourceInspectorPlugin;
 use bevy_xpbd_2d::{prelude::*, SubstepSchedule, SubstepSet};
 use serde::{Deserialize, Serialize};
+use sickle_ui::prelude::*;
 
 #[derive(SystemSet, Debug, Clone, PartialEq, Eq, Hash)]
 pub enum GameSystemSet {
@@ -26,7 +27,7 @@ pub enum WorldGenPreset {
     EMPTY
 }
 
-#[derive(Debug, Resource, Default, Reflect, Serialize, Deserialize)]
+#[derive(Debug, Resource, Default, Reflect, Serialize, Deserialize, Clone)]
 #[reflect(Resource)]
 pub struct WorldInfo {
     pub display_name: String,
@@ -59,7 +60,6 @@ impl Plugin for WorldPlugin {
     fn build(&self, app: &mut App) {
         app.insert_resource(WorldInfo { display_name: "".to_string(), name: "".to_string(), preset: WorldGenPreset::default(), last_player_pos: Vec2::ZERO });
         app.register_type::<WorldInfo>();
-        app.add_plugins(ResourceInspectorPlugin::<WorldInfo>::default());
         
         app.insert_resource(Gravity(Vec2::NEG_Y * (9.81 * TILE_SIZE as f32)))
             .add_plugins(ChunkManagerPlugin)
@@ -79,7 +79,7 @@ impl Plugin for WorldPlugin {
                 GameSystemSet::Player
             ).chain().run_if(in_state(GameState::Game)))
 
-            .add_systems(OnEnter(GameState::Game), (set_clear_color, setup).chain().in_set(GameSystemSet::World))
+            .add_systems(OnEnter(GameState::Game), (set_clear_color, setup_ui, setup).chain().in_set(GameSystemSet::World))
             .add_systems(Update, 
                (
                     update_cursor,
@@ -98,6 +98,26 @@ fn set_clear_color(
 ) {
     let mut camera = camera_q.single_mut();
     camera.clear_color = ClearColorConfig::Custom(Color::rgb(0.48, 0.48, 0.67));
+}
+
+fn setup_ui(
+    mut commands: Commands,
+    asset_server: Res<AssetServer>
+) {
+    commands.ui_builder(UiRoot).row(|row| {
+        row.named("GUI");
+        row.insert(FromWorld);
+        row.spawn(
+            TextBundle::from_section(
+                "teste",
+                TextStyle {
+                    color: Color::WHITE,
+                    font: asset_server.load("fonts/nokiafc22.ttf"),
+                    font_size: 40.0
+                }
+            )
+        );
+    });
 }
 
 fn setup(
@@ -184,6 +204,8 @@ fn block_input(
         (player_transform.translation.y / TILE_SIZE as f32).floor() as i32,
     );
 
+    if cursor.block_position.as_vec2().distance(player_position.as_vec2()) > 7.0 { return; }
+
     if player_position != cursor.block_position || cursor.layer == PlaceMode::WALL {
         if mouse_button_input.just_pressed(MouseButton::Right) {
             try_place_block_ev.send(TryPlaceBlock { layer: cursor.layer, position: cursor.block_position, id: cursor.block_type });
@@ -262,6 +284,7 @@ fn update_cursor(
     mut cursor_q: Query<(&mut Transform, &mut BlockCursor, &mut Sprite, &mut Visibility)>,
     mut cursor_block_icon_q: Query<(&mut Transform, &mut Visibility), (With<CursorBlockIcon>, Without<BlockCursor>)>,
     camera_q: Query<(&Camera, &GlobalTransform)>,
+    player_q: Query<&Transform, (With<Player>, Without<BlockCursor>, Without<CursorBlockIcon>)>,
     time: Res<Time>
 ) {
     if let Ok(window) = window_query.get_single() {
@@ -276,7 +299,20 @@ fn update_cursor(
             .and_then(|cursor| camera.viewport_to_world_2d(camera_global_transform, cursor))
         {
             *cursor_visibility = Visibility::Visible;
-            *cursor_icon_visibility = Visibility::Visible;
+
+            if let Ok(player_transform) = player_q.get_single() {
+                let player_position = IVec2::new(
+                    (player_transform.translation.x / TILE_SIZE as f32).floor() as i32,
+                    (player_transform.translation.y / TILE_SIZE as f32).floor() as i32,
+                );
+                if cursor.block_position.as_vec2().distance(player_position.as_vec2()) > 7.0 {
+                    *cursor_icon_visibility = Visibility::Hidden;
+                } else {
+                    *cursor_icon_visibility = Visibility::Visible;
+                }
+            } else {
+                *cursor_icon_visibility = Visibility::Visible;
+            }
     
             cursor_icon_transform.translation = Vec3::new(world_position.x, world_position.y, cursor_icon_transform.translation.z);
     

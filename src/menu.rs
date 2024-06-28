@@ -10,7 +10,16 @@ use crate::{world::{WorldGenPreset, WorldInfo}, GameState};
 struct PlayButton;
 
 #[derive(Component)]
+struct PlaySelectedWorldButton;
+
+#[derive(Component)]
 struct CreateWorldButton;
+
+#[derive(Component)]
+struct OpenWorldsFolderButton;
+
+#[derive(Component)]
+struct RefreshWorldListButton;
 
 #[derive(Component)]
 struct CreateWorldAndPlayButton;
@@ -28,7 +37,9 @@ struct WorldCreationNameTextInput;
 struct WorldGenPresetDropdown;
 
 #[derive(Component)]
-struct WorldListEntry;
+struct WorldListEntry {
+    world_info: WorldInfo
+}
 
 // This is for the entities composing the default main menu in InMenuState enum
 #[derive(Component)]
@@ -45,6 +56,12 @@ struct SettingsMenu;
 #[derive(Component)]
 struct WorldCreation;
 
+#[derive(Component)]
+struct WorldListScroll;
+
+#[derive(Event)]
+struct RefreshWorldList;
+
 #[derive(Debug, Clone, Copy, Default, Eq, PartialEq, Hash, States)]
 pub enum InMenuState {
     #[default]
@@ -54,7 +71,7 @@ pub enum InMenuState {
 }
 
 #[derive(Resource, Default)]
-struct WorldListEntryIndex(Option<u8>);
+struct WorldListEntryEID(Option<Entity>);
 
 pub struct MenuPlugin;
 
@@ -63,17 +80,23 @@ impl Plugin for MenuPlugin {
         app.add_plugins(SickleUiPlugin);
         app.add_plugins(TextInputPlugin);
 
+        app.add_event::<RefreshWorldList>();
+
         app.init_state::<InMenuState>();
-        app.insert_resource(WorldListEntryIndex(None));
+        app.insert_resource(WorldListEntryEID(None));
         app.add_systems(OnEnter(GameState::Menu), setup_menu);
         app.add_systems(Update, (
             button_system,
-            world_list_entry_system,
             on_play_button_pressed,
+            world_list_entry_system,
+            on_exit_world_selection_pressed,
+            on_play_selected_world_pressed,
             on_create_world_pressed,
+            on_open_worlds_folder_pressed,
+            on_refresh_world_list,
+            on_refresh_world_list_pressed,
             on_exit_world_creation_pressed,
             on_create_world_and_play_pressed,
-            on_exit_world_selection_pressed
         ).run_if(in_state(GameState::Menu)));
         app.add_systems(OnExit(GameState::Menu), destroy_menu);
 
@@ -227,13 +250,14 @@ fn destroy_default_menu(
 
 fn setup_world_screen_menu(
     mut commands: Commands,
-    asset_server: Res<AssetServer>
+    asset_server: Res<AssetServer>,
+    mut refresh_world_list_ev: EventWriter<RefreshWorldList>
 ) {
     let font = asset_server.load("fonts/nokiafc22.ttf");
 
     let button_style = Style {
         width: Val::Percent(100.0),
-        height: Val::Px(40.0),
+        //height: Val::Px(40.0),
         border: UiRect::all(Val::Px(5.0)),
         justify_content: JustifyContent::Center,
         align_items: AlignItems::Center,
@@ -257,8 +281,7 @@ fn setup_world_screen_menu(
                 .border_color(Color::WHITE)
                 .padding(UiRect::all(Val::Px(5.0)))
                 .border(UiRect::all(Val::Px(5.0)))
-                .width(Val::Percent(50.0))
-                .height(Val::Percent(50.0))
+                .min_height(Val::Px(550.0))
                 .row_gap(Val::Px(5.0))
             ;
 
@@ -266,68 +289,14 @@ fn setup_world_screen_menu(
                 world_scroll_view.style()
                     .background_color(Color::hex("#2b2c2f").unwrap())
                 ;
-
-                let mut found_worlds: bool = false;
-
-                match fs::read_dir("worlds") {
-                    Ok(dirs) => {
-                        for dir in dirs {
-                            match dir {
-                                Ok(entry) => {
-                                    if entry.path().is_dir() {
-                                        found_worlds = true;
-
-                                        world_scroll_view.container(NodeBundle {..default()}, |world_thing| {
-                                            let world_name = entry.file_name().into_string().unwrap();
-
-                                            world_thing.spawn((
-                                                Name::new(format!("World entry: {}", world_name)),
-                                                ButtonBundle {
-                                                    style: Style {
-                                                        flex_direction: FlexDirection::Row,
-                                                        border: UiRect::all(Val::Px(2.0)),
-                                                        margin: UiRect::all(Val::Px(5.0)),
-                                                        padding: UiRect::all(Val::Px(5.0)),
-                                                        width: Val::Percent(100.0),
-                                                        ..default()
-                                                    },
-                                                    ..default()
-                                                },
-                                                WorldListEntry
-                                            )).style().background_color(Color::rgba(0.0, 0.0, 0.0, 0.0)).entity_commands().with_children(|parent| {
-                                                parent.spawn(
-                                                    TextBundle::from_section(world_name, TextStyle {
-                                                        font: font.clone(),
-                                                        font_size: 24.0,
-                                                        color: Color::WHITE,
-                                                }));
-                                            });
-                                        });
-                                    }
-                                },
-                                Err(e) => error!("An error ocurred when reading a world directory entry: {}", e)
-                            }
-                        }
-                    },
-                    Err(e) => error!("An error occurred when checking for worlds directory: {}", e)
-                }
-
-                if !found_worlds {
-                    world_scroll_view.spawn(
-                        TextBundle::from_section("No worlds were found.",
-                        TextStyle {
-                            font: font.clone(),
-                            font_size: 24.0,
-                            color: Color::GRAY,
-                        }).with_text_justify(JustifyText::Center)
-                    ).style().height(Val::Percent(100.0));
-                }
+                world_scroll_view.insert(WorldListScroll);
             });
 
             world_sel.container(NodeBundle { ..default() }, |button_container| {
-                button_container.style()
+                button_container.named("Buttons").style()
                     .flex_direction(FlexDirection::Row)
                     .column_gap(Val::Px(5.0))
+                    .height(Val::Px(100.0))
                 ;
 
                 button_container.spawn((
@@ -347,7 +316,27 @@ fn setup_world_screen_menu(
                             font_size: 24.0,
                             color: Color::WHITE,
                         },
-                    ));
+                    ).with_text_justify(JustifyText::Center));
+                });
+
+                button_container.spawn((
+                    Name::new("Play World Button"),
+                    ButtonBundle {
+                        style: button_style.clone(),
+                        border_color: BorderColor(Color::WHITE),
+                        background_color: BackgroundColor(Color::BLACK),
+                        ..default()
+                    },
+                    PlaySelectedWorldButton
+                )).entity_commands().with_children(|parent| {
+                    parent.spawn(TextBundle::from_section(
+                        "Play Selected World",
+                        TextStyle {
+                            font: font.clone(),
+                            font_size: 24.0,
+                            color: Color::WHITE,
+                        },
+                    ).with_text_justify(JustifyText::Center));
                 });
 
                 button_container.spawn((
@@ -367,7 +356,47 @@ fn setup_world_screen_menu(
                             font_size: 24.0,
                             color: Color::WHITE,
                         },
-                    ));
+                    ).with_text_justify(JustifyText::Center));
+                });
+
+                button_container.spawn((
+                    Name::new("Open Worlds Folder Button"),
+                    ButtonBundle {
+                        style: button_style.clone(),
+                        border_color: BorderColor(Color::WHITE),
+                        background_color: BackgroundColor(Color::BLACK),
+                        ..default()
+                    },
+                    OpenWorldsFolderButton
+                )).entity_commands().with_children(|parent| {
+                    parent.spawn(TextBundle::from_section(
+                        "Open Worlds Folder",
+                        TextStyle {
+                            font: font.clone(),
+                            font_size: 24.0,
+                            color: Color::WHITE,
+                        },
+                    ).with_text_justify(JustifyText::Center));
+                });
+
+                button_container.spawn((
+                    Name::new("Refresh Button"),
+                    ButtonBundle {
+                        style: button_style.clone(),
+                        border_color: BorderColor(Color::WHITE),
+                        background_color: BackgroundColor(Color::BLACK),
+                        ..default()
+                    },
+                    RefreshWorldListButton
+                )).entity_commands().with_children(|parent| {
+                    parent.spawn(TextBundle::from_section(
+                        "Refresh",
+                        TextStyle {
+                            font: font.clone(),
+                            font_size: 24.0,
+                            color: Color::WHITE,
+                        },
+                    ).with_text_justify(JustifyText::Center));
                 });
             });
         });
@@ -500,6 +529,8 @@ fn setup_world_screen_menu(
                 });
             });
         });
+
+        refresh_world_list_ev.send(RefreshWorldList);
     });
 }
 
@@ -540,6 +571,29 @@ fn on_exit_world_selection_pressed(
     }
 }
 
+fn on_play_selected_world_pressed(
+    inter_q: Query<&Interaction, With<PlaySelectedWorldButton>>,
+    input: Res<ButtonInput<MouseButton>>,
+    world_entry_q: Query<&WorldListEntry>,
+    index_res: Res<WorldListEntryEID>,
+    mut world_info_res: ResMut<WorldInfo>,
+    mut state: ResMut<NextState<GameState>>
+) {
+    if let Ok(inter) = inter_q.get_single() {
+        if input.just_released(MouseButton::Left) {
+            if *inter == Interaction::Hovered || *inter == Interaction::Pressed {
+                match index_res.0 {
+                    Some(e) => {
+                        *world_info_res = world_entry_q.get(e).unwrap().world_info.clone();
+                        state.set(GameState::Game);
+                    }
+                    None => {}
+                }
+            }
+        }
+    }
+}
+
 fn on_create_world_pressed(
     inter_q: Query<&Interaction, With<CreateWorldButton>>,
     mut world_creation_q: Query<&mut Visibility, With<WorldCreation>>,
@@ -555,6 +609,35 @@ fn on_create_world_pressed(
 
                 let mut text_input_inactive = text_input_q.get_single_mut().unwrap();
                 *text_input_inactive = TextInputInactive(false);
+            }
+        }
+    }
+}
+
+fn on_open_worlds_folder_pressed(
+    inter_q: Query<&Interaction, With<OpenWorldsFolderButton>>,
+    input: Res<ButtonInput<MouseButton>>
+) {
+    if let Ok(inter) = inter_q.get_single() {
+        if input.just_released(MouseButton::Left) {
+            if *inter == Interaction::Hovered || *inter == Interaction::Pressed {
+                if let Err(e) = opener::open("./worlds") {
+                    error!("Failed opening worlds folder: {}", e);
+                }
+            }
+        }
+    }
+}
+
+fn on_refresh_world_list_pressed(
+    inter_q: Query<&Interaction, With<RefreshWorldListButton>>,
+    input: Res<ButtonInput<MouseButton>>,
+    mut ev: EventWriter<RefreshWorldList>
+) {
+    if let Ok(inter) = inter_q.get_single() {
+        if input.just_released(MouseButton::Left) {
+            if *inter == Interaction::Hovered || *inter == Interaction::Pressed {
+                ev.send(RefreshWorldList);
             }
         }
     }
@@ -639,20 +722,143 @@ fn on_exit_world_creation_pressed(
     }
 }
 
+fn on_refresh_world_list(
+    mut commands: Commands,
+    mut ev: EventReader<RefreshWorldList>,
+    world_list_q: Query<Entity, With<WorldListScroll>>,
+    mut entry_eid_res: ResMut<WorldListEntryEID>,
+    asset_server: Res<AssetServer>
+) {
+    for _ in ev.read() {
+        let mut world_scroll_view = commands.ui_builder(world_list_q.single());
+
+        world_scroll_view.entity_commands().despawn_descendants();
+        entry_eid_res.0 = None;
+
+        let font = asset_server.load("fonts/nokiafc22.ttf");
+
+        let mut found_worlds: bool = false;
+    
+        match fs::read_dir("worlds") {
+            Ok(dirs) => {
+                for dir in dirs {
+                    match dir {
+                        Ok(entry) => {
+                            if entry.path().is_dir() {
+                                found_worlds = true;
+
+                                let world_name = entry.file_name().into_string().unwrap();
+                                
+                                world_scroll_view.container(NodeBundle {..default()}, |world_thing| {
+                                    match fs::read_to_string(format!("{}/world.toml", entry.path().display())) {
+                                        Ok(str) => {
+                                            match toml::from_str::<WorldInfo>(&str) {
+                                                Ok(world_info) => {
+
+                                                    world_thing.spawn((
+                                                        Name::new(format!("World entry: {}", world_name)),
+                                                        ButtonBundle {
+                                                            style: Style {
+                                                                flex_direction: FlexDirection::Column,
+                                                                border: UiRect::all(Val::Px(2.0)),
+                                                                margin: UiRect::all(Val::Px(5.0)),
+                                                                padding: UiRect::all(Val::Px(5.0)),
+                                                                width: Val::Percent(100.0),
+                                                                ..default()
+                                                            },
+                                                            ..default()
+                                                        },
+                                                        WorldListEntry {world_info: world_info.clone()}
+                                                    )).style().background_color(Color::rgba(0.0, 0.0, 0.0, 0.0)).entity_commands().with_children(|parent| {
+                                                        parent.spawn(
+                                                            TextBundle::from_section(world_info.display_name, TextStyle {
+                                                                font: font.clone(),
+                                                                font_size: 30.0,
+                                                                color: Color::WHITE,
+                                                        }));
+    
+                                                        let world_preset_string = match world_info.preset {
+                                                            WorldGenPreset::DEFAULT => "Default",
+                                                            WorldGenPreset::FLAT => "Flat",
+                                                            WorldGenPreset::EMPTY => "Empty"
+                                                        };
+    
+                                                        parent.spawn(
+                                                            TextBundle::from_section(format!("Type: {}", world_preset_string), TextStyle {
+                                                                font: font.clone(),
+                                                                font_size: 20.0,
+                                                                color: Color::WHITE,
+                                                        }));
+                                                        
+                                                        parent.spawn(
+                                                            TextBundle::from_section(format!("Saved as: {}", world_name), TextStyle {
+                                                                font: font.clone(),
+                                                                font_size: 16.0,
+                                                                color: Color::GRAY,
+                                                        }));
+                                                    });
+                                                },
+                                                Err(e) => error!("Failed to parse world.toml for world '{}': {}", world_name, e)
+                                            }
+                                        },
+                                        Err(e) => {
+                                            error!("Failed to read world.toml from '{}' world: {}", world_name, e);
+                                        }
+                                    }
+                                });
+                            }
+                        },
+                        Err(e) => error!("An error ocurred when reading a world directory entry: {}", e)
+                    }
+                }
+            },
+            Err(e) => error!("An error occurred when checking for worlds directory: {}", e)
+        }
+    
+        if !found_worlds {
+            world_scroll_view.spawn(
+                TextBundle::from_section("No worlds were found.",
+                TextStyle {
+                    font: font.clone(),
+                    font_size: 24.0,
+                    color: Color::GRAY,
+                }).with_text_justify(JustifyText::Center)
+            ).style().height(Val::Percent(100.0));
+        }
+    }
+}
+
 fn world_list_entry_system(
-    mut entry_q: Query<(&Interaction, &mut BorderColor), With<WorldListEntry>>,
+    mut entry_inter_q: Query<(Entity, &Interaction), With<WorldListEntry>>,
+    mut entry_border_q: Query<&mut BorderColor, With<WorldListEntry>>,
+    entry_worldinfo_q: Query<&WorldListEntry>,
     mouse_input: Res<ButtonInput<MouseButton>>,
-    mut entry_index: ResMut<WorldListEntryIndex>
+    mut entry_eid: ResMut<WorldListEntryEID>,
+    mut next_state: ResMut<NextState<GameState>>,
+    mut world_info_res: ResMut<WorldInfo>
 ) {
     if mouse_input.just_pressed(MouseButton::Left) {
-        for (index, (inter, mut border_color)) in entry_q.iter_mut().enumerate() {
+        let mut entry_eid_d: Entity = Entity::PLACEHOLDER;
+
+        for (entity, inter) in entry_inter_q.iter_mut() {
             if *inter == Interaction::Hovered || *inter == Interaction::Pressed {
-                if entry_index.0 != Some(index as u8) {
-                    *border_color = BorderColor(Color::GRAY);
-                    entry_index.0 = Some(index as u8);
+                entry_eid_d = entity;
+                break;
+            }
+        }
+
+        if entry_eid_d != Entity::PLACEHOLDER {
+            if entry_eid.0 != Some(entry_eid_d) {
+                for mut bc in entry_border_q.iter_mut() {
+                    *bc = BorderColor(Color::rgba(0., 0., 0., 0.));
                 }
+
+                let mut border_color = entry_border_q.get_mut(entry_eid_d).unwrap();
+                *border_color = Color::GRAY.into();
+                entry_eid.0 = Some(entry_eid_d);
             } else {
-                *border_color = BorderColor(Color::rgba(0.0, 0.0, 0.0, 0.0));
+                *world_info_res = entry_worldinfo_q.get(entry_eid_d).unwrap().world_info.clone();
+                next_state.set(GameState::Game);
             }
         }
     }
