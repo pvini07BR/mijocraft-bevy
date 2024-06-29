@@ -1,5 +1,5 @@
 use crate::chunk::{self, BlockType, PlaceMode, CHUNK_WIDTH, TILE_SIZE};
-use crate::chunk_manager::{ChunkManagerPlugin, FinishedSavingChunks, LoadChunks, SaveAllChunks, TryPlaceBlock, UnloadChunks};
+use crate::chunk_manager::{ChunkManagerPlugin, FinishedSavingChunks, SaveAllChunks, TryPlaceBlock, UnloadChunks};
 
 use crate::player::{Player, PlayerPlugin};
 
@@ -458,8 +458,6 @@ fn camera_follow_player(
 
 fn mouse_scroll_input(
     keyboard_input: Res<ButtonInput<KeyCode>>,
-    mut unload_chunks_ev: EventWriter<UnloadChunks>,
-    mut load_chunks_ev: EventWriter<LoadChunks>,
     mut camera_query: Query<&mut Transform, With<Camera2d>>,
     mut cursor_query: Query<&mut BlockCursor>,
     mut cursor_block_icon_q: Query<&mut TextureAtlas, With<CursorBlockIcon>>,

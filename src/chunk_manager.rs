@@ -1,6 +1,4 @@
-use std::{path::Path, thread};
-
-use bevy::{ecs::world, math::{self, Vec3A}, prelude::*, render::primitives::Aabb, sprite::{Anchor, MaterialMesh2dBundle}, tasks::{block_on, futures_lite::future, AsyncComputeTaskPool, IoTaskPool, Task}, utils::HashMap, window::PrimaryWindow};
+use bevy::{math::Vec3A, prelude::*, render::primitives::Aabb, sprite::{Anchor, MaterialMesh2dBundle}, tasks::{block_on, futures_lite::future, AsyncComputeTaskPool, IoTaskPool, Task}, utils::HashMap, window::PrimaryWindow};
 use bevy_xpbd_2d::components::RigidBody;
 use std::io::ErrorKind;
 
@@ -218,12 +216,16 @@ fn save_all_chunks(
             layers[0] = serde_big_array::Array(chunk.layers[0].clone());
             layers[1] = serde_big_array::Array(chunk.layers[1].clone());
 
-            let s = bincode::serialize(&layers).unwrap();
-            let a = pos;
-            let world_name = world_info_res.name.clone();
-            match std::fs::write(format!("worlds/{}/chunks/{}.bin", world_name, a), &s) {
-                Err(e) => error!("Error saving chunk at {}: {}", a, e),
-                _ => {}
+            match bincode::serialize(&layers) {
+                Ok(s) => {
+                    let a = pos;
+                    let world_name = world_info_res.name.clone();
+                    match std::fs::write(format!("worlds/{}/chunks/{}.bin", world_name, a), &s) {
+                        Err(e) => error!("Error saving chunk at {}: {}", a, e),
+                        _ => {}
+                    }
+                },
+                Err(e) => error!("Could not serialize chunk at {}: {}", pos, e)
             }
         }
 
@@ -260,15 +262,20 @@ fn unload_and_save_chunks(
                     layers[0] = serde_big_array::Array(chunk.layers[0].clone());
                     layers[1] = serde_big_array::Array(chunk.layers[1].clone());
     
-                    let s = bincode::serialize(&layers).unwrap();
                     let a = chunk_compo.position;
-                    let world_name = world_info_res.name.clone();
-                    IoTaskPool::get().spawn(async move {
-                        match std::fs::write(format!("worlds/{}/chunks/{}.bin", world_name, a), &s) {
-                            Err(e) => error!("Error saving chunk at {}: {}", a, e),
-                            _ => {}
-                        }
-                    }).detach();
+
+                    match bincode::serialize(&layers) {
+                        Ok(s) => {
+                            let world_name = world_info_res.name.clone();
+                            IoTaskPool::get().spawn(async move {
+                                match std::fs::write(format!("worlds/{}/chunks/{}.bin", world_name, a), &s) {
+                                    Err(e) => error!("Error saving chunk at {}: {}", a, e),
+                                    _ => {}
+                                }
+                            }).detach();
+                        },
+                        Err(e) => error!("Could not serialize chunk at {}: {}", a, e)
+                    }
     
                     chunks.remove(&chunk_compo.position);
                     commands.entity(chunk_entity).despawn_recursive();
@@ -308,7 +315,7 @@ fn load_chunks(
 
             // Had to make it load some extra chunks offscreen
             // to make it truly seamless
-            for y in (c_bottom_right.y)..(c_top_left.y+1) {
+            for y in (c_bottom_right.y-1)..(c_top_left.y+2) {
                 for x in (c_top_left.x-1)..(c_bottom_right.x+2) {
                     let pos = IVec2::new(x, y);
                     let already_has: bool = chunks_res.contains_key(&pos);
