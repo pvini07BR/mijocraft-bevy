@@ -308,7 +308,7 @@ fn load_chunks(
 
             // Had to make it load some extra chunks offscreen
             // to make it truly seamless
-            for y in (c_bottom_right.y-1)..(c_top_left.y+2) {
+            for y in (c_bottom_right.y)..(c_top_left.y+1) {
                 for x in (c_top_left.x-1)..(c_bottom_right.x+2) {
                     let pos = IVec2::new(x, y);
                     let already_has: bool = chunks_res.contains_key(&pos);
@@ -318,6 +318,7 @@ fn load_chunks(
                     if !already_has {
                         let task_entity = commands.spawn_empty().id();
                         commands.entity(task_entity).insert(Name::new("Chunk Loading Async Task"));
+                        commands.entity(task_entity).insert(FromWorld);
 
                         let task: Task<(Chunk, SpawnChunk)> = thread_pool.spawn(async move {
                             let mut blocks: [BlockType; CHUNK_AREA] = [BlockType::AIR; CHUNK_AREA];
@@ -325,9 +326,13 @@ fn load_chunks(
                             
                             match std::fs::read(str) {
                                 Ok(bytes) => {
-                                    let layers: [serde_big_array::Array<BlockType, CHUNK_AREA>; 2] = bincode::deserialize(&bytes).unwrap();
-                                    blocks = layers[1].0;
-                                    walls = layers[0].0;
+                                    match bincode::deserialize::<[serde_big_array::Array<BlockType, CHUNK_AREA>; 2]>(&bytes) {
+                                        Ok(layers) => {
+                                            blocks = layers[1].0;
+                                            walls = layers[0].0;
+                                        },
+                                        Err(e) => error!("Error deserializing chunk at {}: {}", pos, e)
+                                    }
                                 },
                                 Err(e) => {
                                     if e.kind() != ErrorKind::NotFound {
