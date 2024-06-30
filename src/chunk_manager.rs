@@ -2,7 +2,7 @@ use bevy::{math::Vec3A, prelude::*, render::primitives::Aabb, sprite::{Anchor, M
 use bevy_xpbd_2d::components::RigidBody;
 use std::io::ErrorKind;
 
-use crate::{player::Player, world::FromWorld, GameState};
+use crate::{player::{Player, SetPlayerPosition}, world::FromWorld, GameState};
 use crate::{chunk::{generate_chunk_layer_mesh, BlockType, CalcLightChunks, Chunk, ChunkComponent, ChunkLayer, ChunkPlugin, PlaceMode, RecollisionChunk, RemeshChunks, CHUNK_AREA, CHUNK_WIDTH, TILE_SIZE}, utils::*, world::{GameSystemSet, WorldGenPreset, WorldInfo}};
 
 #[derive(Event)]
@@ -29,15 +29,19 @@ pub struct SaveAllChunks;
 pub struct FinishedSavingChunks;
 
 #[derive(Component)]
-struct ComputeChunkLoading(Task<(Chunk, SpawnChunk)>);
+struct ComputeChunkLoading(Task<Result<(SpawnChunk, Option<Vec2>), String>>);
 
 #[derive(Event, Debug)]
 pub struct SpawnChunk {
-    pub position: IVec2
+    pub position: IVec2,
+    pub chunk: Chunk
 }
 
 #[derive(Resource, DerefMut, Deref)]
 pub struct Chunks(pub HashMap<IVec2, Chunk>);
+
+#[derive(Resource, Deref, DerefMut)]
+pub struct JustCreatedWorld(pub bool);
 
 pub struct ChunkManagerPlugin;
 
@@ -52,6 +56,8 @@ impl Plugin for ChunkManagerPlugin
         app.add_event::<FinishedSavingChunks>();
 
         app.insert_resource(Chunks(HashMap::new()));
+        app.insert_resource(JustCreatedWorld(false));
+
         app.add_plugins(ChunkPlugin);
         app.add_systems(Update, (
             unload_and_save_chunks,
@@ -73,9 +79,13 @@ pub fn spawn_chunk(
     mut calc_light_ev: EventWriter<CalcLightChunks>,
     mut remesh_chunk_ev: EventWriter<RemeshChunks>,
     mut recol_chunk_ev: EventWriter<RecollisionChunk>,
+    mut chunks_res: ResMut<Chunks>,
     asset_server: Res<AssetServer>
 ) {
     for ev in spawn_chunk_ev.read() {
+        if chunks_res.contains_key(&ev.position) { return; }
+
+        chunks_res.insert(ev.position, ev.chunk.clone());
 
         let pixel_chunk_pos = ev.position.as_vec2() * CHUNK_WIDTH as f32 * TILE_SIZE as f32;
         let chunk_material_handle = materials.add(asset_server.load("textures/blocks.png"));
@@ -216,7 +226,7 @@ fn save_all_chunks(
             layers[0] = serde_big_array::Array(chunk.layers[0].clone());
             layers[1] = serde_big_array::Array(chunk.layers[1].clone());
 
-            match bincode::serialize(&layers) {
+            match bincode::serialize::<[serde_big_array::Array<BlockType, CHUNK_AREA>; 2]>(&layers) {
                 Ok(s) => {
                     let a = pos;
                     let world_name = world_info_res.name.clone();
@@ -231,7 +241,7 @@ fn save_all_chunks(
 
         if let Ok(player_transform) = player_q.get_single() {
             let mut new_info = world_info_res.clone();
-            new_info.last_player_pos = player_transform.translation.xy();
+            new_info.last_player_pos = player_transform.translation.xy() / TILE_SIZE as f32;
 
             if let Ok(str) = toml::to_string(&new_info) {
                 let _ = std::fs::write(format!("worlds/{}/world.toml", new_info.name), str);
@@ -293,7 +303,7 @@ fn load_chunks(
     chunks_res: ResMut<Chunks>,
     window_query: Query<&Window, With<PrimaryWindow>>,
     camera_query: Query<(&Camera, &GlobalTransform), With<Camera2d>>,
-    world_info_res: Res<WorldInfo>
+    world_info_res: ResMut<WorldInfo>
 ) {
     // ==========================
     // Load chunks from disk
@@ -317,9 +327,9 @@ fn load_chunks(
             // to make it truly seamless
             for y in (c_bottom_right.y-1)..(c_top_left.y+2) {
                 for x in (c_top_left.x-1)..(c_bottom_right.x+2) {
-                    let pos = IVec2::new(x, y);
-                    let already_has: bool = chunks_res.contains_key(&pos);
-                    let str = format!("worlds/{}/chunks/{}.bin", world_name, pos);
+                    let chunk_pos = IVec2::new(x, y);
+                    let already_has: bool = chunks_res.contains_key(&chunk_pos);
+                    let stre = format!("worlds/{}/chunks/{}.bin", world_name, chunk_pos);
 
                     let thread_pool = AsyncComputeTaskPool::get();
                     if !already_has {
@@ -327,23 +337,33 @@ fn load_chunks(
                         commands.entity(task_entity).insert(Name::new("Chunk Loading Async Task"));
                         commands.entity(task_entity).insert(FromWorld);
 
-                        let task: Task<(Chunk, SpawnChunk)> = thread_pool.spawn(async move {
+                        // This last Vec2 is for defining the position the player
+                        // should spawn in when creating a new world
+                        let task: Task<(Result<(SpawnChunk, Option<Vec2>), String>)> = thread_pool.spawn(async move {
+                            let mut player_spawn_pos: Option<Vec2> = None;
+                            let mut error: Option<String> = None;
+
                             let mut blocks: [BlockType; CHUNK_AREA] = [BlockType::AIR; CHUNK_AREA];
                             let mut walls: [BlockType; CHUNK_AREA] = [BlockType::AIR; CHUNK_AREA];
                             
-                            match std::fs::read(str) {
+                            match std::fs::read(stre.clone()) {
                                 Ok(bytes) => {
                                     match bincode::deserialize::<[serde_big_array::Array<BlockType, CHUNK_AREA>; 2]>(&bytes) {
                                         Ok(layers) => {
                                             blocks = layers[1].0;
                                             walls = layers[0].0;
                                         },
-                                        Err(e) => error!("Error deserializing chunk at {}: {}", pos, e)
+                                        Err(e) => {
+                                            error!("Error deserializing chunk at {}: {}", chunk_pos, e);
+                                            error!("File that tried to deserialize: {}", stre);
+                                            error = Some(format!("{}", e));
+                                        }
                                     }
                                 },
                                 Err(e) => {
                                     if e.kind() != ErrorKind::NotFound {
-                                        error!("Error when trying to load chunk at {}: {}", pos, e);
+                                        error!("Error when trying to load chunk at {}: {}", chunk_pos, e);
+                                        error = Some(format!("{}", e));
                                     } else {
                                         // If a chunk file is not found at a certain location,
                                         // then it will try to generate a new one from scratch.
@@ -351,43 +371,35 @@ fn load_chunks(
 
                                         match world_preset {
                                             WorldGenPreset::DEFAULT => {
-                                                if pos.y == 0 {
-                                                    for x in 0..CHUNK_WIDTH {
-                                                        let mut s = (f32::sin((x as f32 + (pos.x as f32 * CHUNK_WIDTH as f32)) / 6.0) / 2.0) + 0.5;
-                                                        s *= CHUNK_WIDTH as f32 / 2.0;
-                                                        for y in 0..CHUNK_WIDTH {
-                                                            if y as f32 > s {
-                                                                blocks[get_index_from_position(UVec2::new(x as u32, y as u32))] = BlockType::AIR;
-                                                            } else {
-                                                                blocks[get_index_from_position(UVec2::new(x as u32, y as u32))] = BlockType::STONE;
+                                                for x in 0..CHUNK_WIDTH {
+                                                    for y in (0..CHUNK_WIDTH).rev() {
+                                                        let global_pos = IVec2::new((chunk_pos.x * CHUNK_WIDTH as i32) + x as i32, (chunk_pos.y * CHUNK_WIDTH as i32) + y as i32);
+                                                        let s = (f32::sin(global_pos.x as f32 / CHUNK_WIDTH as f32) * CHUNK_WIDTH as f32).floor() as i32;
+
+                                                        if global_pos.y == s {
+                                                            if global_pos.x == 0 {
+                                                                player_spawn_pos = Some(Vec2::new(0.5, global_pos.y as f32 + 1.5));
                                                             }
-                                                        }
-                                                    }
-                                                } else if pos.y < 0 {
-                                                    for y in 0..CHUNK_WIDTH {
-                                                        for x in 0..CHUNK_WIDTH {
-                                                            blocks[get_index_from_position(UVec2::new(x as u32, y as u32))] = BlockType::STONE;
+
+                                                            blocks[get_index_from_position(UVec2::new(x as u32, y as u32))] = BlockType::GRASS;           
+                                                            walls[get_index_from_position(UVec2::new(x as u32, y as u32))] = BlockType::GRASS;
+                                                        } else if global_pos.y < s {
+                                                            blocks[get_index_from_position(UVec2::new(x as u32, y as u32))] = BlockType::DIRT;           
+                                                            walls[get_index_from_position(UVec2::new(x as u32, y as u32))] = BlockType::DIRT;
                                                         }
                                                     }
                                                 }
                                             },
 
-                                            WorldGenPreset::EMPTY => {
-                                                if pos == IVec2::ZERO {
-                                                    for x in 0..(CHUNK_WIDTH/2) {
-                                                        blocks[x] = BlockType::GRASS;
-                                                    }
-                                                } else if pos == IVec2::new(-1, 0) {
-                                                    for x in 0..(CHUNK_WIDTH/2) {
-                                                        blocks[(CHUNK_WIDTH/2)+x] = BlockType::GRASS;
-                                                    }
-                                                }
-                                            },
                                             WorldGenPreset::FLAT => {
-                                                if pos.y == 0 {
+                                                if chunk_pos.y == 0 {
                                                     for y in 0..CHUNK_WIDTH {
                                                         for x in 0..CHUNK_WIDTH {
                                                             if y == CHUNK_WIDTH/2 {
+                                                                if x == 0 {
+                                                                    player_spawn_pos = Some(Vec2::new(0.5, y as f32 + 1.5));
+                                                                }
+
                                                                 blocks[get_index_from_position(UVec2::new(x as u32, y as u32))] = BlockType::GRASS;
                                                                 walls[get_index_from_position(UVec2::new(x as u32, y as u32))] = BlockType::GRASS;
                                                             }
@@ -398,13 +410,27 @@ fn load_chunks(
                                                         }
                                                     }
                                                 }
-                                                else if pos.y < 0 && pos.y >= -2 {
+                                                else if chunk_pos.y < 0 && chunk_pos.y >= -2 {
                                                     blocks = [BlockType::DIRT; CHUNK_AREA];
                                                     walls = [BlockType::DIRT; CHUNK_AREA];
                                                 }
-                                                else if pos.y < -2 {
+                                                else if chunk_pos.y < -2 {
                                                     blocks = [BlockType::STONE; CHUNK_AREA];
                                                     walls = [BlockType::STONE; CHUNK_AREA];
+                                                }
+                                            },
+
+                                            WorldGenPreset::EMPTY => {
+                                                player_spawn_pos = Some(Vec2::new(0.5, 1.5));
+                                                
+                                                if chunk_pos == IVec2::ZERO {
+                                                    for x in 0..(CHUNK_WIDTH/2) {
+                                                        blocks[x] = BlockType::STONE;
+                                                    }
+                                                } else if chunk_pos == IVec2::new(-1, 0) {
+                                                    for x in 0..(CHUNK_WIDTH/2) {
+                                                        blocks[(CHUNK_WIDTH/2)+x] = BlockType::STONE;
+                                                    }
                                                 }
                                             }
                                         }
@@ -412,7 +438,10 @@ fn load_chunks(
                                 }
                             }
 
-                            return (Chunk { layers: [walls, blocks], light: [0; CHUNK_AREA] }, SpawnChunk{ position: pos });
+                            return match error {
+                                Some(e) => Err(e),
+                                None => Ok((SpawnChunk{ position: chunk_pos, chunk: Chunk { layers: [walls, blocks], light: [0; CHUNK_AREA] } }, player_spawn_pos))
+                            }
                         });
 
                         commands.entity(task_entity).insert(ComputeChunkLoading(task));
@@ -427,12 +456,25 @@ fn process_chunk_loading_tasks(
     mut commands: Commands,
     mut tasks_query: Query<(Entity, &mut ComputeChunkLoading)>,
     mut spawn_chunk_ev: EventWriter<SpawnChunk>,
-    mut chunks_res: ResMut<Chunks>,
+    mut world_info_res: ResMut<WorldInfo>,
+    mut first_time: ResMut<JustCreatedWorld>,
+    mut set_player_pos_ev: EventWriter<SetPlayerPosition>
 ) {
     for (entity, mut task) in tasks_query.iter_mut() {
-        if let Some((chunk, spawn_chunk)) = block_on(future::poll_once(&mut task.0)) {
-            chunks_res.insert(spawn_chunk.position, chunk);
-            spawn_chunk_ev.send(spawn_chunk);
+        if let Some(result) = block_on(future::poll_once(&mut task.0)) {
+            match result {
+                Ok((spawn_chunk, player_spawn_pos)) => {
+                    if first_time.0 {
+                        if let Some(pos) = player_spawn_pos {
+                            world_info_res.last_player_pos = pos;
+                            set_player_pos_ev.send(SetPlayerPosition(pos));
+                            *first_time = JustCreatedWorld(false);
+                        }
+                    }
+                    spawn_chunk_ev.send(spawn_chunk);
+                },
+                Err(_) => {}
+            }
             commands.entity(entity).despawn_recursive();
         }
     }

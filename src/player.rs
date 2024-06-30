@@ -38,17 +38,25 @@ pub struct CurrentChunkPosition {
     pub position: IVec2
 }
 
+#[derive(Event, Deref, DerefMut, Debug)]
+pub struct SetPlayerPosition(pub Vec2);
+
 pub struct PlayerPlugin;
 impl Plugin for PlayerPlugin {
     fn build(&self, app: &mut App) {
         app.insert_resource(CurrentChunkPosition { position: IVec2::ZERO });
-        app.register_type::<CurrentChunkPosition>();
         app.insert_resource(PlayerSettings { nickname: "Player".to_string(), color: Color::RED });
+
+        app.register_type::<CurrentChunkPosition>();
         app.register_type::<PlayerSettings>();
+
+        app.add_event::<SetPlayerPosition>();
+
         app.add_plugins(ResourceInspectorPlugin::<PlayerSettings>::default());
         app.add_systems(OnEnter(GameState::Game), spawn_player.in_set(GameSystemSet::Player));
         app.add_systems(Update, 
             (
+                set_player_pos_event,
                 player_input,
                 apply_gravity,
                 update_grounded,
@@ -96,7 +104,7 @@ fn spawn_player(
                     color: Color::rgba(0.0, 0.0, 0.0, 0.0),
                     ..default()
                 },
-                transform: Transform::from_xyz(world_info_res.last_player_pos.x, world_info_res.last_player_pos.y, 1.0),
+                transform: Transform::from_xyz(world_info_res.last_player_pos.x as f32 * TILE_SIZE as f32, world_info_res.last_player_pos.y as f32 * TILE_SIZE as f32, 1.0),
                 ..default()
             },
             Player {is_on_ground: false, direction: 0, noclip: false },
@@ -120,6 +128,19 @@ fn spawn_player(
     });
 
     load_chunks_ev.send(LoadChunks {});
+}
+
+fn set_player_pos_event(
+    mut set_player_pos_ev: EventReader<SetPlayerPosition>,
+    mut player_query: Query<&mut Transform, With<Player>>
+) {
+    for ev in set_player_pos_ev.read() {
+        if let Ok(mut player_transform) = player_query.get_single_mut() {
+            println!("{:?}", ev);
+            player_transform.translation.x = ev.x * TILE_SIZE as f32;
+            player_transform.translation.y = ev.y * TILE_SIZE as f32;
+        }
+    }
 }
 
 fn update_grounded(

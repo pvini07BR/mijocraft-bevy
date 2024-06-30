@@ -33,7 +33,7 @@ pub struct WorldInfo {
     pub display_name: String,
     pub name: String,
     pub preset: WorldGenPreset,
-    pub last_player_pos: Vec2
+    pub last_player_pos: Vec2   // THIS IS IN BLOCK UNITS!!!
 }
 
 #[derive(Component)]
@@ -137,8 +137,8 @@ fn config_camera(
     let (mut camera, mut camera_transform) = camera_q.single_mut();
     camera.clear_color = ClearColorConfig::Custom(Color::rgb(0.48, 0.48, 0.67));
 
-    camera_transform.translation.x = world_info.last_player_pos.x;
-    camera_transform.translation.y = world_info.last_player_pos.y;
+    camera_transform.translation.x = world_info.last_player_pos.x as f32 * TILE_SIZE as f32;
+    camera_transform.translation.y = world_info.last_player_pos.y as f32 * TILE_SIZE as f32;
 }
 
 fn setup_ui(

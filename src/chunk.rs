@@ -50,7 +50,7 @@ impl BlockType {
     }
 }
 
-#[derive(Debug)]
+#[derive(Clone, Debug)]
 pub struct Chunk {
     pub layers: [[BlockType; CHUNK_AREA]; 2],
     pub light: [u8; CHUNK_AREA]

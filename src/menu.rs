@@ -4,7 +4,7 @@ use bevy::{app::AppExit, prelude::*, ui::FocusPolicy};
 use bevy_simple_text_input::{TextInputBundle, TextInputInactive, TextInputPlugin, TextInputSettings, TextInputValue};
 use filenamify::filenamify;
 use sickle_ui::{prelude::*, SickleUiPlugin};
-use crate::{world::{WorldGenPreset, WorldInfo}, GameState};
+use crate::{chunk_manager::JustCreatedWorld, world::{WorldGenPreset, WorldInfo}, GameState};
 
 #[derive(Component)]
 struct PlayButton;
@@ -708,7 +708,8 @@ fn on_create_world_and_play_pressed(
     text_input_query: Query<&TextInputValue, With<WorldCreationNameTextInput>>,
     world_preset_dropdown_q: Query<&Dropdown, With<WorldGenPresetDropdown>>,
     input: Res<ButtonInput<MouseButton>>,
-    mut world_info_res: ResMut<WorldInfo>
+    mut world_info_res: ResMut<WorldInfo>,
+    mut first_time: ResMut<JustCreatedWorld>
 ) {
     if let Ok(inter) = inter_q.get_single() {
         if input.just_released(MouseButton::Left) {
@@ -733,8 +734,10 @@ fn on_create_world_and_play_pressed(
                     display_name: text_input.0.clone(),
                     name: world_name.clone(),
                     preset,
-                    last_player_pos: Vec2::new(16.0, 256.0)
+                    last_player_pos: Vec2::ZERO
                 };
+
+                *first_time = JustCreatedWorld(true);
 
                 if let Err(e) = fs::create_dir(format!("worlds/{}", world_name.clone())) {
                     error!("Failed creating world directory for '{}': {}", world_name, e);

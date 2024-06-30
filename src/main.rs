@@ -20,9 +20,18 @@ pub enum GameState {
     Game
 }
 
+#[derive(Resource)]
+pub struct GameSettings {
+    pub wall_ambient_occlusion: bool,
+    pub smooth_lighting: bool
+}
+
 fn main() {
     App::new()
         .init_state::<GameState>()
+
+        .insert_resource(GameSettings {smooth_lighting: true, wall_ambient_occlusion: true})
+
         .add_plugins(DefaultPlugins.set(ImagePlugin::default_nearest()))
         .add_plugins(WorldInspectorPlugin::new())
         //.add_plugins(PhysicsDebugPlugin::default())
