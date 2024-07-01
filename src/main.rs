@@ -4,6 +4,7 @@ mod chunk_manager;
 mod player;
 mod menu;
 mod world;
+mod widgets;
 
 use std::{fs, io::ErrorKind};
 
@@ -23,14 +24,15 @@ pub enum GameState {
 #[derive(Resource)]
 pub struct GameSettings {
     pub wall_ambient_occlusion: bool,
-    pub smooth_lighting: bool
+    pub smooth_lighting: bool,
+    pub wall_darkness: f32
 }
 
 fn main() {
     App::new()
         .init_state::<GameState>()
 
-        .insert_resource(GameSettings {smooth_lighting: true, wall_ambient_occlusion: true})
+        .insert_resource(GameSettings {smooth_lighting: true, wall_ambient_occlusion: true, wall_darkness: 0.5})
 
         .add_plugins(DefaultPlugins.set(ImagePlugin::default_nearest()))
         .add_plugins(WorldInspectorPlugin::new())

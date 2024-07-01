@@ -5,9 +5,13 @@ use bevy_simple_text_input::{TextInputBundle, TextInputInactive, TextInputPlugin
 use filenamify::filenamify;
 use sickle_ui::{prelude::*, SickleUiPlugin};
 use crate::{chunk_manager::JustCreatedWorld, world::{WorldGenPreset, WorldInfo}, GameState};
+use crate::widgets::{SpawnSettingsWidget, UIWidgetsPlugin};
 
 #[derive(Component)]
 struct PlayButton;
+
+#[derive(Component)]
+struct SettingsButton;
 
 #[derive(Component)]
 struct QuitButton;
@@ -65,6 +69,9 @@ struct WorldListScroll;
 #[derive(Event)]
 struct RefreshWorldList;
 
+#[derive(Component)]
+struct ExitSettingsMenuButton;
+
 #[derive(Debug, Clone, Copy, Default, Eq, PartialEq, Hash, States)]
 pub enum InMenuState {
     #[default]
@@ -83,6 +90,8 @@ impl Plugin for MenuPlugin {
         app.add_plugins(SickleUiPlugin);
         app.add_plugins(TextInputPlugin);
 
+        app.add_plugins(UIWidgetsPlugin);
+
         app.add_event::<RefreshWorldList>();
 
         app.init_state::<InMenuState>();
@@ -91,6 +100,8 @@ impl Plugin for MenuPlugin {
         app.add_systems(Update, (
             button_system,
             on_play_button_pressed,
+            on_settings_button_pressed,
+            on_exit_settings_pressed,
             on_exit_pressed,
             world_list_entry_system,
             on_exit_world_selection_pressed,
@@ -102,6 +113,7 @@ impl Plugin for MenuPlugin {
             on_exit_world_creation_pressed,
             on_create_world_and_play_pressed,
         ).run_if(in_state(GameState::Menu)));
+
         app.add_systems(OnExit(GameState::Menu), destroy_menu);
 
         app.add_systems(OnEnter(InMenuState::Default), setup_default_menu.run_if(in_state(GameState::Menu)));
@@ -109,6 +121,9 @@ impl Plugin for MenuPlugin {
 
         app.add_systems(OnEnter(InMenuState::WorldScreen), setup_world_screen_menu.run_if(in_state(GameState::Menu)));
         app.add_systems(OnExit(InMenuState::WorldScreen), destroy_world_screen_menu.run_if(in_state(GameState::Menu)));
+
+        app.add_systems(OnEnter(InMenuState::SettingsMenu), setup_settings.run_if(in_state(GameState::Menu)));
+        app.add_systems(OnExit(InMenuState::SettingsMenu), destroy_settings.run_if(in_state(GameState::Menu)));
     }
 }
 
@@ -233,7 +248,8 @@ fn setup_default_menu(
                         border_color: BorderColor(Color::WHITE),
                         background_color: BackgroundColor(Color::BLACK),
                         ..default()
-                    }
+                    },
+                    SettingsButton
                 )).entity_commands().with_children(|parent| {
                     parent.spawn(
                         TextBundle::from_section(
@@ -588,6 +604,85 @@ fn destroy_world_screen_menu(
     }
 }
 
+fn setup_settings(
+    mut commands: Commands,
+    mut ev: EventWriter<SpawnSettingsWidget>,
+    asset_server: Res<AssetServer>
+) {
+    let font = asset_server.load("fonts/nokiafc22.ttf");
+    let button_style = Style {
+        width: Val::Percent(100.0),
+        //height: Val::Px(40.0),
+        border: UiRect::all(Val::Px(5.0)),
+        justify_content: JustifyContent::Center,
+        align_items: AlignItems::Center,
+        padding: UiRect::all(Val::Px(5.0)),
+        ..default()
+    };
+
+    let id = commands.ui_builder(UiRoot).container(NodeBundle {..default()}, |container|{
+        container.insert(SettingsMenu);
+        container.named("Settings Menu");
+        container.style()
+            .width(Val::Percent(100.0))
+            .height(Val::Percent(100.0))
+            .justify_content(JustifyContent::Center)
+            .align_items(AlignItems::Center)
+        ;
+
+        container.container(NodeBundle {..default()}, |c| {
+            c.named("Stuff");
+            c.style()
+                .flex_direction(FlexDirection::Column)
+                .height(Val::Percent(80.0))
+                .justify_content(JustifyContent::SpaceBetween)
+                .align_items(AlignItems::Center)
+            ;
+
+            c.spawn(
+                TextBundle::from_section("Settings",
+                 TextStyle {
+                     font: font.clone(),
+                     font_size: 150.0,
+                     color: Color::WHITE,
+                     ..default()
+                 })
+            );
+
+            c.spawn((
+                Name::new("Exit Settings Button"),
+                ButtonBundle {
+                    style: button_style.clone(),
+                    border_color: BorderColor(Color::WHITE),
+                    background_color: BackgroundColor(Color::BLACK),
+                    ..default()
+                },
+                ExitSettingsMenuButton
+            )).entity_commands().with_children(|parent| {
+                parent.spawn(TextBundle::from_section(
+                    "< Go Back",
+                    TextStyle {
+                        font: font.clone(),
+                        font_size: 40.0,
+                        color: Color::WHITE,
+                    },
+                ).with_text_justify(JustifyText::Center));
+            });
+        }).style().position_type(PositionType::Absolute);
+    }).id();
+
+    ev.send(SpawnSettingsWidget(id));
+}
+
+fn destroy_settings(
+    mut commands: Commands,
+    settings_query: Query<Entity, With<SettingsMenu>>
+) {
+    for entity in settings_query.iter() {
+        commands.entity(entity).despawn_recursive();
+    }
+}
+
 fn on_play_button_pressed(
     inter_q: Query<&Interaction, With<PlayButton>>,
     mut state: ResMut<NextState<InMenuState>>,
@@ -597,6 +692,34 @@ fn on_play_button_pressed(
         if input.just_released(MouseButton::Left) {
             if *inter == Interaction::Hovered || *inter == Interaction::Pressed {
                 state.set(InMenuState::WorldScreen);
+            }
+        }
+    }
+}
+
+fn on_settings_button_pressed(
+    inter_q: Query<&Interaction, With<SettingsButton>>,
+    mut state: ResMut<NextState<InMenuState>>,
+    input: Res<ButtonInput<MouseButton>>
+) {
+    if let Ok(inter) = inter_q.get_single() {
+        if input.just_released(MouseButton::Left) {
+            if *inter == Interaction::Hovered || *inter == Interaction::Pressed {
+                state.set(InMenuState::SettingsMenu);
+            }
+        }
+    }
+}
+
+fn on_exit_settings_pressed(
+    inter_q: Query<&Interaction, With<ExitSettingsMenuButton>>,
+    mut state: ResMut<NextState<InMenuState>>,
+    input: Res<ButtonInput<MouseButton>>
+) {
+    if let Ok(inter) = inter_q.get_single() {
+        if input.just_released(MouseButton::Left) {
+            if *inter == Interaction::Hovered || *inter == Interaction::Pressed {
+                state.set(InMenuState::Default);
             }
         }
     }

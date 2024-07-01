@@ -1,5 +1,6 @@
 use bevy::{math::Vec3A, prelude::*, render::primitives::Aabb, sprite::{Anchor, MaterialMesh2dBundle}, tasks::{block_on, futures_lite::future, AsyncComputeTaskPool, IoTaskPool, Task}, utils::HashMap, window::PrimaryWindow};
 use bevy_xpbd_2d::components::RigidBody;
+use noise::{Fbm, NoiseFn, Perlin, PerlinSurflet, Simplex};
 use std::io::ErrorKind;
 
 use crate::{player::{Player, SetPlayerPosition}, world::FromWorld, GameState};
@@ -339,7 +340,7 @@ fn load_chunks(
 
                         // This last Vec2 is for defining the position the player
                         // should spawn in when creating a new world
-                        let task: Task<(Result<(SpawnChunk, Option<Vec2>), String>)> = thread_pool.spawn(async move {
+                        let task: Task<Result<(SpawnChunk, Option<Vec2>), String>> = thread_pool.spawn(async move {
                             let mut player_spawn_pos: Option<Vec2> = None;
                             let mut error: Option<String> = None;
 
@@ -374,7 +375,9 @@ fn load_chunks(
                                                 for x in 0..CHUNK_WIDTH {
                                                     for y in (0..CHUNK_WIDTH).rev() {
                                                         let global_pos = IVec2::new((chunk_pos.x * CHUNK_WIDTH as i32) + x as i32, (chunk_pos.y * CHUNK_WIDTH as i32) + y as i32);
-                                                        let s = (f32::sin(global_pos.x as f32 / CHUNK_WIDTH as f32) * CHUNK_WIDTH as f32).floor() as i32;
+                                                        //let s = (f32::sin(global_pos.x as f32 / CHUNK_WIDTH as f32) * CHUNK_WIDTH as f32).floor() as i32;
+                                                        let noise = Fbm::<Perlin>::new(0);
+                                                        let s = (noise.get([global_pos.x as f64 / CHUNK_WIDTH as f64, global_pos.x as f64 / CHUNK_WIDTH as f64]) * CHUNK_WIDTH as f64).floor() as i32;
 
                                                         if global_pos.y == s {
                                                             if global_pos.x == 0 {
