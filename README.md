@@ -7,10 +7,10 @@ At the moment, there is no binaries to download, because it's not meant to be re
 
 # Todo
 - Chunk System (✓)
-- (Basic) World Generation (✓)
+- (WORKING ON IT) World Generation (-)
 - Player movement, controls and interactivity (✓)
 - Block placement (✓)
-- World System ( )
+- World System (✓)
 - Liquids ( )
 - Item system/Inventory ( )
 - Item containers (like chests) ( )
