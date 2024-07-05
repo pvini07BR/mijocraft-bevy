@@ -1,41 +1,20 @@
+use crate::chunk_manager::JustCreatedWorld;
+use crate::player::PlayerSettings;
+use crate::widgets::button::{ButtonPressed, ButtonWidgetExt, ButtonWidgetPlugin};
+use crate::widgets::game_settings::{GameSettingsWidgetExt, GameSettingsWidgetPlugin};
+use crate::widgets::player_settings::{PlayerSettingsWidgetExt, PlayerSettingsWidgetPlugin};
+use crate::world::WorldGenPreset;
+use crate::GameSettings;
+use crate::{world::WorldInfo, GameState};
+use bevy::color::palettes::css::GRAY;
+use bevy::{app::AppExit, prelude::*, ui::FocusPolicy};
+use bevy_simple_text_input::{
+    TextInputBundle, TextInputInactive, TextInputPlugin, TextInputSettings, TextInputValue,
+};
+use sickle_ui::{prelude::*, SickleUiPlugin};
 use std::fs;
 
-use bevy::{app::AppExit, prelude::*, ui::FocusPolicy};
-use bevy_simple_text_input::{TextInputBundle, TextInputInactive, TextInputPlugin, TextInputSettings, TextInputValue};
 use filenamify::filenamify;
-use sickle_ui::{prelude::*, SickleUiPlugin};
-use crate::{chunk_manager::JustCreatedWorld, world::{WorldGenPreset, WorldInfo}, GameState};
-use crate::widgets::{SpawnSettingsWidget, UIWidgetsPlugin};
-
-#[derive(Component)]
-struct PlayButton;
-
-#[derive(Component)]
-struct SettingsButton;
-
-#[derive(Component)]
-struct QuitButton;
-
-#[derive(Component)]
-struct PlaySelectedWorldButton;
-
-#[derive(Component)]
-struct CreateWorldButton;
-
-#[derive(Component)]
-struct OpenWorldsFolderButton;
-
-#[derive(Component)]
-struct RefreshWorldListButton;
-
-#[derive(Component)]
-struct CreateWorldAndPlayButton;
-
-#[derive(Component)]
-struct ExitWorldCreationButton;
-
-#[derive(Component)]
-struct ExitWorldSelectionScreenButton;
 
 #[derive(Component)]
 struct WorldCreationNameTextInput;
@@ -44,8 +23,8 @@ struct WorldCreationNameTextInput;
 struct WorldGenPresetDropdown;
 
 #[derive(Component)]
-struct WorldListEntry {
-    world_info: WorldInfo
+pub struct WorldListEntry {
+    world_info: WorldInfo,
 }
 
 // This is for the entities composing the default main menu in InMenuState enum
@@ -60,6 +39,10 @@ struct WorldScreenMenu;
 #[derive(Component)]
 struct SettingsMenu;
 
+// This is for the entities composing the player settings menu in InMenuState enum
+#[derive(Component)]
+struct PlayerSettingsMenu;
+
 #[derive(Component)]
 struct WorldCreation;
 
@@ -69,15 +52,13 @@ struct WorldListScroll;
 #[derive(Event)]
 struct RefreshWorldList;
 
-#[derive(Component)]
-struct ExitSettingsMenuButton;
-
 #[derive(Debug, Clone, Copy, Default, Eq, PartialEq, Hash, States)]
 pub enum InMenuState {
     #[default]
     Default,
     WorldScreen,
-    SettingsMenu
+    SettingsMenu,
+    PlayerSettingsMenu,
 }
 
 #[derive(Resource, Default)]
@@ -90,77 +71,84 @@ impl Plugin for MenuPlugin {
         app.add_plugins(SickleUiPlugin);
         app.add_plugins(TextInputPlugin);
 
-        app.add_plugins(UIWidgetsPlugin);
+        app.add_plugins((
+            ButtonWidgetPlugin,
+            GameSettingsWidgetPlugin,
+            PlayerSettingsWidgetPlugin,
+        ));
 
         app.add_event::<RefreshWorldList>();
 
         app.init_state::<InMenuState>();
         app.insert_resource(WorldListEntryEID(None));
         app.add_systems(OnEnter(GameState::Menu), setup_menu);
-        app.add_systems(Update, (
-            button_system,
-            on_play_button_pressed,
-            on_settings_button_pressed,
-            on_exit_settings_pressed,
-            on_exit_pressed,
-            world_list_entry_system,
-            on_exit_world_selection_pressed,
-            on_play_selected_world_pressed,
-            on_create_world_pressed,
-            on_open_worlds_folder_pressed,
-            on_refresh_world_list,
-            on_refresh_world_list_pressed,
-            on_exit_world_creation_pressed,
-            on_create_world_and_play_pressed,
-        ).run_if(in_state(GameState::Menu)));
+        app.add_systems(
+            Update,
+            (on_refresh_world_list, world_list_entry_system).run_if(in_state(GameState::Menu)),
+        );
 
         app.add_systems(OnExit(GameState::Menu), destroy_menu);
 
-        app.add_systems(OnEnter(InMenuState::Default), setup_default_menu.run_if(in_state(GameState::Menu)));
-        app.add_systems(OnExit(InMenuState::Default), destroy_default_menu.run_if(in_state(GameState::Menu)));
+        app.add_systems(
+            OnEnter(InMenuState::Default),
+            setup_default_menu.run_if(in_state(GameState::Menu)),
+        );
+        app.add_systems(
+            OnExit(InMenuState::Default),
+            destroy_default_menu.run_if(in_state(GameState::Menu)),
+        );
 
-        app.add_systems(OnEnter(InMenuState::WorldScreen), setup_world_screen_menu.run_if(in_state(GameState::Menu)));
-        app.add_systems(OnExit(InMenuState::WorldScreen), destroy_world_screen_menu.run_if(in_state(GameState::Menu)));
+        app.add_systems(
+            OnEnter(InMenuState::WorldScreen),
+            setup_world_screen_menu.run_if(in_state(GameState::Menu)),
+        );
+        app.add_systems(
+            OnExit(InMenuState::WorldScreen),
+            destroy_world_screen_menu.run_if(in_state(GameState::Menu)),
+        );
 
-        app.add_systems(OnEnter(InMenuState::SettingsMenu), setup_settings.run_if(in_state(GameState::Menu)));
-        app.add_systems(OnExit(InMenuState::SettingsMenu), destroy_settings.run_if(in_state(GameState::Menu)));
+        app.add_systems(
+            OnEnter(InMenuState::SettingsMenu),
+            setup_settings.run_if(in_state(GameState::Menu)),
+        );
+        app.add_systems(
+            OnExit(InMenuState::SettingsMenu),
+            destroy_settings.run_if(in_state(GameState::Menu)),
+        );
+
+        app.add_systems(
+            OnEnter(InMenuState::PlayerSettingsMenu),
+            setup_player_settings.run_if(in_state(GameState::Menu)),
+        );
+        app.add_systems(
+            OnExit(InMenuState::PlayerSettingsMenu),
+            destroy_player_settings.run_if(in_state(GameState::Menu)),
+        );
     }
 }
 
-fn setup_menu(
-    mut menu_state: ResMut<NextState<InMenuState>>
-) {
+fn setup_menu(mut menu_state: ResMut<NextState<InMenuState>>) {
     menu_state.set(InMenuState::Default);
 }
 
 fn destroy_menu(
     mut commands: Commands,
-    menu_entities_query: Query<Entity, Or<(With<DefaultMenu>, With<WorldScreenMenu>, With<SettingsMenu>)>>
+    menu_entities_query: Query<
+        Entity,
+        Or<(With<DefaultMenu>, With<WorldScreenMenu>, With<SettingsMenu>)>,
+    >,
 ) {
     for entity in menu_entities_query.iter() {
         commands.entity(entity).despawn_recursive();
     }
 }
 
-fn setup_default_menu(
-    mut commands: Commands,
-    asset_server: Res<AssetServer>
-) {
+fn setup_default_menu(mut commands: Commands, asset_server: Res<AssetServer>) {
     let font = asset_server.load("fonts/nokiafc22.ttf");
     let logo_text_style = TextStyle {
         font: font.clone(),
         font_size: 150.0,
         color: Color::WHITE,
-    };
-
-    let button_style = Style {
-        width: Val::Px(200.0),
-        height: Val::Px(65.0),
-        border: UiRect::all(Val::Px(5.0)),
-        margin: UiRect::all(Val::Px(5.0)),
-        justify_content: JustifyContent::Center,
-        align_items: AlignItems::Center,
-        ..default()
     };
 
     commands.ui_builder(UiRoot).row(|row| {
@@ -170,11 +158,15 @@ fn setup_default_menu(
 
         row.spawn((
             Name::new("Version Text"),
-            TextBundle::from_section("Alpha v0.1.0", TextStyle {
-                font: font.clone(),
-                font_size: 24.0,
-                color: Color::WHITE,
-            }).with_style(Style {
+            TextBundle::from_section(
+                "Alpha v0.1.0",
+                TextStyle {
+                    font: font.clone(),
+                    font_size: 24.0,
+                    color: Color::WHITE,
+                },
+            )
+            .with_style(Style {
                 align_self: AlignSelf::FlexEnd,
                 min_width: Val::Px(221.0),
                 ..default()
@@ -182,128 +174,74 @@ fn setup_default_menu(
         ));
 
         row.column(|column| {
-            column.style()
+            column
+                .style()
                 .width(Val::Percent(100.0))
                 .justify_content(JustifyContent::Center)
                 .align_items(AlignItems::Center)
                 .row_gap(Val::Px(100.0));
             column.insert(Name::new("Menu"));
-    
+
             column.spawn((
                 Name::from("Logo"),
-                TextBundle::from_section("mijocraft", logo_text_style).with_text_justify(JustifyText::Center),
+                TextBundle::from_section("mijocraft", logo_text_style)
+                    .with_text_justify(JustifyText::Center),
             ));
-    
-            column.container(
-                NodeBundle {
-                    ..default()
-                }
-            , |container| {
-                container.style().flex_direction(FlexDirection::Column);
-    
-                container.spawn((
-                    Name::new("Play Button"),
-                    ButtonBundle {
-                        style: button_style.clone(),
-                        border_color: BorderColor(Color::WHITE),
-                        background_color: BackgroundColor(Color::BLACK),
-                        ..default()
-                    },
-                    PlayButton
-                )).entity_commands().with_children(|parent| {
-                    parent.spawn(TextBundle::from_section(
-                        "Play",
-                        TextStyle {
-                            font: font.clone(),
-                            font_size: 40.0,
-                            color: Color::WHITE,
-                        },
-                    ).with_text_justify(JustifyText::Center));
-                });
 
-                container.spawn((
-                    Name::new("Player Customization Button"),
-                    ButtonBundle {
-                        style: button_style.clone(),
-                        border_color: BorderColor(Color::WHITE),
-                        background_color: BackgroundColor(Color::BLACK),
-                        ..default()
-                    }
-                )).entity_commands().with_children(|parent| {
-                    parent.spawn(
-                        TextBundle::from_section(
-                        "Player Customization",
-                        TextStyle {
-                            font: font.clone(),
-                            font_size: 24.0,
-                            color: Color::WHITE,
-                        },
-                    ).with_text_justify(JustifyText::Center));
-                });
-        
-                container.spawn((
-                    Name::new("Settings Button"),
-                    ButtonBundle {
-                        style: button_style.clone(),
-                        border_color: BorderColor(Color::WHITE),
-                        background_color: BackgroundColor(Color::BLACK),
-                        ..default()
-                    },
-                    SettingsButton
-                )).entity_commands().with_children(|parent| {
-                    parent.spawn(
-                        TextBundle::from_section(
-                        "Settings",
-                        TextStyle {
-                            font: font.clone(),
-                            font_size: 40.0,
-                            color: Color::WHITE,
-                        },
-                    ).with_text_justify(JustifyText::Center));
-                });
+            column.container(NodeBundle { ..default() }, |container| {
+                container
+                    .style()
+                    .flex_direction(FlexDirection::Column)
+                    .row_gap(Val::Px(10.0));
 
-                container.spawn((
-                    Name::new("Quit Button"),
-                    ButtonBundle {
-                        style: button_style,
-                        border_color: BorderColor(Color::WHITE),
-                        background_color: BackgroundColor(Color::BLACK),
-                        ..default()
+                container.button("Play".to_string(), 40.0).observe(
+                    |_: Trigger<ButtonPressed>, mut state: ResMut<NextState<InMenuState>>| {
+                        state.set(InMenuState::WorldScreen);
                     },
-                    QuitButton
-                )).entity_commands().with_children(|parent| {
-                    parent.spawn(
-                        TextBundle::from_section(
-                        "Quit",
-                        TextStyle {
-                            font: font.clone(),
-                            font_size: 40.0,
-                            color: Color::WHITE,
+                );
+
+                container
+                    .button("Player\nCustomization".to_string(), 24.0)
+                    .observe(
+                        |_: Trigger<ButtonPressed>, mut state: ResMut<NextState<InMenuState>>| {
+                            state.set(InMenuState::PlayerSettingsMenu);
                         },
-                    ).with_text_justify(JustifyText::Center));
-                });
+                    );
+
+                container.button("Settings".to_string(), 40.0).observe(
+                    |_: Trigger<ButtonPressed>, mut state: ResMut<NextState<InMenuState>>| {
+                        state.set(InMenuState::SettingsMenu);
+                    },
+                );
+
+                container.button("Quit".to_string(), 40.0).observe(
+                    |_: Trigger<ButtonPressed>, mut ev: EventWriter<AppExit>| {
+                        ev.send(AppExit::Success);
+                    },
+                );
             });
         });
 
         row.spawn((
             Name::new("Credits Text"),
-            TextBundle::from_section("Made by pvini07BR", TextStyle {
-                font: font,
-                font_size: 24.0,
-                color: Color::WHITE,
-            }).with_style(Style {
+            TextBundle::from_section(
+                "Made by pvini07BR",
+                TextStyle {
+                    font: font,
+                    font_size: 24.0,
+                    color: Color::WHITE,
+                },
+            )
+            .with_style(Style {
                 align_self: AlignSelf::FlexEnd,
                 min_width: Val::Px(221.0),
                 ..default()
-            })
+            }),
         ));
     });
 }
 
-fn destroy_default_menu(
-    mut commands: Commands,
-    default_menu_q: Query<Entity, With<DefaultMenu>>
-) {
+fn destroy_default_menu(mut commands: Commands, default_menu_q: Query<Entity, With<DefaultMenu>>) {
     for entity in default_menu_q.iter() {
         commands.entity(entity).despawn_recursive();
     }
@@ -312,20 +250,8 @@ fn destroy_default_menu(
 fn setup_world_screen_menu(
     mut commands: Commands,
     asset_server: Res<AssetServer>,
-    mut refresh_world_list_ev: EventWriter<RefreshWorldList>
+    mut refresh_world_list_ev: EventWriter<RefreshWorldList>,
 ) {
-    let font = asset_server.load("fonts/nokiafc22.ttf");
-
-    let button_style = Style {
-        width: Val::Percent(100.0),
-        //height: Val::Px(40.0),
-        border: UiRect::all(Val::Px(5.0)),
-        justify_content: JustifyContent::Center,
-        align_items: AlignItems::Center,
-        padding: UiRect::horizontal(Val::Px(5.0)),
-        ..default()
-    };
-
     commands.ui_builder(UiRoot).row(|row| {
         row.insert(WorldScreenMenu);
         row.named("World Screen Menu");
@@ -348,7 +274,7 @@ fn setup_world_screen_menu(
 
             world_sel.scroll_view(None, |world_scroll_view| {
                 world_scroll_view.style()
-                    .background_color(Color::hex("#2b2c2f").unwrap())
+                    .background_color(Srgba::hex("#2b2c2f").unwrap().into())
                 ;
                 world_scroll_view.insert(WorldListScroll);
             });
@@ -360,104 +286,52 @@ fn setup_world_screen_menu(
                     .height(Val::Px(100.0))
                 ;
 
-                button_container.spawn((
-                    Name::new("Exit World Selection Screen Button"),
-                    ButtonBundle {
-                        style: button_style.clone(),
-                        border_color: BorderColor(Color::WHITE),
-                        background_color: BackgroundColor(Color::BLACK),
-                        ..default()
-                    },
-                    ExitWorldSelectionScreenButton
-                )).entity_commands().with_children(|parent| {
-                    parent.spawn(TextBundle::from_section(
-                        "< Go Back",
-                        TextStyle {
-                            font: font.clone(),
-                            font_size: 24.0,
-                            color: Color::WHITE,
-                        },
-                    ).with_text_justify(JustifyText::Center));
+                button_container.button("< Go Back".into(), 24.0).observe(|
+                    _: Trigger<ButtonPressed>,
+                    mut state: ResMut<NextState<InMenuState>>
+                | {
+                    state.set(InMenuState::Default);
                 });
 
-                button_container.spawn((
-                    Name::new("Play World Button"),
-                    ButtonBundle {
-                        style: button_style.clone(),
-                        border_color: BorderColor(Color::WHITE),
-                        background_color: BackgroundColor(Color::BLACK),
-                        ..default()
-                    },
-                    PlaySelectedWorldButton
-                )).entity_commands().with_children(|parent| {
-                    parent.spawn(TextBundle::from_section(
-                        "Play Selected World",
-                        TextStyle {
-                            font: font.clone(),
-                            font_size: 24.0,
-                            color: Color::WHITE,
-                        },
-                    ).with_text_justify(JustifyText::Center));
+                button_container.button("Play Selected\nWorld".into(), 24.0).observe(|
+                    _: Trigger<ButtonPressed>,
+                    world_entry_q: Query<&WorldListEntry>,
+                    index_res: Res<WorldListEntryEID>,
+                    mut world_info_res: ResMut<WorldInfo>,
+                    mut state: ResMut<NextState<GameState>>
+                | {
+                    match index_res.0 {
+                        Some(e) => {
+                            *world_info_res = world_entry_q.get(e).unwrap().world_info.clone();
+                            state.set(GameState::Game);
+                        }
+                        None => {}
+                    }
                 });
 
-                button_container.spawn((
-                    Name::new("Create World Button"),
-                    ButtonBundle {
-                        style: button_style.clone(),
-                        border_color: BorderColor(Color::WHITE),
-                        background_color: BackgroundColor(Color::BLACK),
-                        ..default()
-                    },
-                    CreateWorldButton
-                )).entity_commands().with_children(|parent| {
-                    parent.spawn(TextBundle::from_section(
-                        "Create World",
-                        TextStyle {
-                            font: font.clone(),
-                            font_size: 24.0,
-                            color: Color::WHITE,
-                        },
-                    ).with_text_justify(JustifyText::Center));
+                button_container.button("Create World".into(), 24.0).observe(|
+                    _: Trigger<ButtonPressed>,
+                    mut world_creation_q: Query<&mut Visibility, With<WorldCreation>>,
+                    mut text_input_q: Query<&mut TextInputInactive, With<WorldCreationNameTextInput>>
+                | {
+                    for mut visibility in world_creation_q.iter_mut() {
+                        *visibility = Visibility::Visible;
+                    }
+
+                    let mut text_input_inactive = text_input_q.get_single_mut().unwrap();
+                    *text_input_inactive = TextInputInactive(false);
                 });
 
-                button_container.spawn((
-                    Name::new("Open Worlds Folder Button"),
-                    ButtonBundle {
-                        style: button_style.clone(),
-                        border_color: BorderColor(Color::WHITE),
-                        background_color: BackgroundColor(Color::BLACK),
-                        ..default()
-                    },
-                    OpenWorldsFolderButton
-                )).entity_commands().with_children(|parent| {
-                    parent.spawn(TextBundle::from_section(
-                        "Open Worlds Folder",
-                        TextStyle {
-                            font: font.clone(),
-                            font_size: 24.0,
-                            color: Color::WHITE,
-                        },
-                    ).with_text_justify(JustifyText::Center));
+                button_container.button("Open Worlds\nFolder".into(), 24.0).observe(|
+                    _: Trigger<ButtonPressed>
+                | {
+                    if let Err(e) = opener::open("./worlds") {
+                        error!("Failed opening worlds folder: {}", e);
+                    }
                 });
 
-                button_container.spawn((
-                    Name::new("Refresh Button"),
-                    ButtonBundle {
-                        style: button_style.clone(),
-                        border_color: BorderColor(Color::WHITE),
-                        background_color: BackgroundColor(Color::BLACK),
-                        ..default()
-                    },
-                    RefreshWorldListButton
-                )).entity_commands().with_children(|parent| {
-                    parent.spawn(TextBundle::from_section(
-                        "Refresh",
-                        TextStyle {
-                            font: font.clone(),
-                            font_size: 24.0,
-                            color: Color::WHITE,
-                        },
-                    ).with_text_justify(JustifyText::Center));
+                button_container.button("Refresh".into(), 24.0).observe(|_: Trigger<ButtonPressed>, mut ev: EventWriter<RefreshWorldList>| {
+                    ev.send(RefreshWorldList);
                 });
             });
         });
@@ -466,7 +340,7 @@ fn setup_world_screen_menu(
             fade.named("Fade");
             fade.style()
                 .position_type(PositionType::Absolute)
-                .background_color(Color::rgba(0.0, 0.0, 0.0, 0.75))
+                .background_color(Color::srgba(0.0, 0.0, 0.0, 0.75))
                 .width(Val::Percent(100.0))
                 .height(Val::Percent(100.0));
             fade.insert(FocusPolicy::Block);
@@ -490,32 +364,17 @@ fn setup_world_screen_menu(
             world_creation.column(|entries| {
                 entries.style().row_gap(Val::Px(15.0));
 
-                entries.spawn((
-                    Name::new("World Creation: Go Back"),
-                    ButtonBundle {
-                        style: Style {
-                            height: Val::Px(40.0),
-                            border: UiRect::all(Val::Px(5.0)),
-                            justify_content: JustifyContent::Center,
-                            align_items: AlignItems::Center,
-                            padding: UiRect::horizontal(Val::Px(5.0)),
-                            align_self: AlignSelf::Start,
-                            ..default()
-                        },
-                        border_color: BorderColor(Color::WHITE),
-                        background_color: BackgroundColor(Color::BLACK),
-                        ..default()
-                    },
-                    ExitWorldCreationButton
-                )).entity_commands().with_children(|parent| {
-                    parent.spawn(TextBundle::from_section(
-                        "< Go Back",
-                        TextStyle {
-                            font: font.clone(),
-                            font_size: 24.0,
-                            color: Color::WHITE,
-                        },
-                    ));
+                entries.button("< Go Back".into(), 24.0).observe(|
+                    _: Trigger<ButtonPressed>,
+                    mut world_creation_q: Query<&mut Visibility, With<WorldCreation>>,
+                    mut text_input_q: Query<&mut TextInputInactive, With<WorldCreationNameTextInput>>
+                | {
+                    for mut visibility in world_creation_q.iter_mut() {
+                        *visibility = Visibility::Hidden;
+                    }
+
+                    let mut text_input_inactive = text_input_q.get_single_mut().unwrap();
+                    *text_input_inactive = TextInputInactive(true);
                 });
 
                 entries.row(|world_name_entry| {
@@ -524,7 +383,7 @@ fn setup_world_screen_menu(
                     world_name_entry.spawn(TextBundle::from_section(
                         "World Name: ",
                         TextStyle {
-                            font: font.clone(),
+                            font: asset_server.load("fonts/nokiafc22.ttf"),
                             font_size: 24.0,
                             color: Color::WHITE,
                         },
@@ -545,7 +404,7 @@ fn setup_world_screen_menu(
                         },
                         TextInputBundle::default()
                             .with_text_style(TextStyle {
-                                font: font.clone(),
+                                font: asset_server.load("fonts/nokiafc22.ttf"),
                                 font_size: 24.0,
                                 color: Color::WHITE,
                                 ..default()
@@ -560,7 +419,7 @@ fn setup_world_screen_menu(
                     world_gen_preset_entry.spawn(TextBundle::from_section(
                         "World Generation Preset: ",
                         TextStyle {
-                            font: font.clone(),
+                            font: asset_server.load("fonts/nokiafc22.ttf"),
                             font_size: 24.0,
                             color: Color::WHITE,
                         },
@@ -569,24 +428,59 @@ fn setup_world_screen_menu(
                     world_gen_preset_entry.dropdown(vec!["Default", "Flat", "Empty"], 0).insert(WorldGenPresetDropdown);
                 });
 
-                entries.spawn((
-                    Name::new("World Creation: Create World and Play"),
-                    ButtonBundle {
-                        style: button_style,
-                        border_color: BorderColor(Color::WHITE),
-                        background_color: BackgroundColor(Color::BLACK),
-                        ..default()
-                    },
-                    CreateWorldAndPlayButton
-                )).entity_commands().with_children(|parent| {
-                    parent.spawn(TextBundle::from_section(
-                        "Create World and Play",
-                        TextStyle {
-                            font: font.clone(),
-                            font_size: 24.0,
-                            color: Color::WHITE,
-                        },
-                    ));
+                entries.button("Create World and Play".into(), 24.0).observe(|
+                    _: Trigger<ButtonPressed>,
+                    mut next_state: ResMut<NextState<GameState>>,
+                    text_input_query: Query<&TextInputValue, With<WorldCreationNameTextInput>>,
+                    world_preset_dropdown_q: Query<&Dropdown, With<WorldGenPresetDropdown>>,
+                    mut world_info_res: ResMut<WorldInfo>,
+                    mut first_time: ResMut<JustCreatedWorld>
+                | {
+                    let preset = match world_preset_dropdown_q.single().value().unwrap() {
+                        0 => WorldGenPreset::DEFAULT,
+                        1 => WorldGenPreset::FLAT,
+                        2 => WorldGenPreset::EMPTY,
+                        _ => WorldGenPreset::DEFAULT
+                    };
+
+                    let text_input = text_input_query.single();
+                    if text_input.0.trim().is_empty() {
+                        error!("You cannot enter in a empty world name!");
+                        return;
+                    }
+
+                    let world_name = filenamify(text_input.0.clone()).to_lowercase().replace(" ", "_");
+                    info!("World will be saved as '{}'.", world_name.clone());
+
+                    let info = WorldInfo {
+                        display_name: text_input.0.clone(),
+                        name: world_name.clone(),
+                        preset,
+                        player_position: None
+                    };
+
+                    *first_time = JustCreatedWorld(true);
+
+                    if let Err(e) = fs::create_dir(format!("worlds/{}", world_name.clone())) {
+                        error!("Failed creating world directory for '{}': {}", world_name, e);
+                    } else {
+                        if let Err(e) = fs::create_dir(format!("worlds/{}/chunks", world_name.clone())) {
+                            error!("Failed creating the chunks directory for '{}': {}", world_name, e);
+                        }
+
+                        match toml::to_string(&info) {
+                            Ok(str) => {
+                                if let Err(e) = fs::write(format!("worlds/{}/world.toml", world_name.clone()), str) {
+                                    error!("Could not write the world information into a file: {}", e);
+                                }
+                            },
+                            Err(e) => error!("Could not serialize world information into a string: {}", e),
+                        }
+                    }
+
+                    *world_info_res = info;
+
+                    next_state.set(GameState::Game);
                 });
             });
         });
@@ -597,7 +491,7 @@ fn setup_world_screen_menu(
 
 fn destroy_world_screen_menu(
     mut commands: Commands,
-    default_menu_q: Query<Entity, With<WorldScreenMenu>>
+    default_menu_q: Query<Entity, With<WorldScreenMenu>>,
 ) {
     for entity in default_menu_q.iter() {
         commands.entity(entity).despawn_recursive();
@@ -606,304 +500,108 @@ fn destroy_world_screen_menu(
 
 fn setup_settings(
     mut commands: Commands,
-    mut ev: EventWriter<SpawnSettingsWidget>,
-    asset_server: Res<AssetServer>
+    asset_server: Res<AssetServer>,
+    settings_res: Res<GameSettings>,
 ) {
     let font = asset_server.load("fonts/nokiafc22.ttf");
-    let button_style = Style {
-        width: Val::Percent(100.0),
-        //height: Val::Px(40.0),
-        border: UiRect::all(Val::Px(5.0)),
-        justify_content: JustifyContent::Center,
-        align_items: AlignItems::Center,
-        padding: UiRect::all(Val::Px(5.0)),
-        ..default()
-    };
 
-    let id = commands.ui_builder(UiRoot).container(NodeBundle {..default()}, |container|{
-        container.insert(SettingsMenu);
-        container.named("Settings Menu");
-        container.style()
-            .width(Val::Percent(100.0))
-            .height(Val::Percent(100.0))
-            .justify_content(JustifyContent::Center)
-            .align_items(AlignItems::Center)
-        ;
-
-        container.container(NodeBundle {..default()}, |c| {
-            c.named("Stuff");
-            c.style()
+    commands
+        .ui_builder(UiRoot)
+        .container(NodeBundle { ..default() }, |container| {
+            container.insert(SettingsMenu);
+            container.named("Game Settings Menu");
+            container
+                .style()
                 .flex_direction(FlexDirection::Column)
-                .height(Val::Percent(80.0))
-                .justify_content(JustifyContent::SpaceBetween)
+                .height(Val::Percent(100.0))
+                .width(Val::Percent(100.0))
+                .justify_content(JustifyContent::SpaceAround)
                 .align_items(AlignItems::Center)
-            ;
+                .align_self(AlignSelf::Center);
 
-            c.spawn(
-                TextBundle::from_section("Settings",
-                 TextStyle {
-                     font: font.clone(),
-                     font_size: 150.0,
-                     color: Color::WHITE,
-                     ..default()
-                 })
-            );
-
-            c.spawn((
-                Name::new("Exit Settings Button"),
-                ButtonBundle {
-                    style: button_style.clone(),
-                    border_color: BorderColor(Color::WHITE),
-                    background_color: BackgroundColor(Color::BLACK),
+            container.spawn(TextBundle::from_section(
+                "Settings",
+                TextStyle {
+                    font: font.clone(),
+                    font_size: 150.0,
+                    color: Color::WHITE,
                     ..default()
                 },
-                ExitSettingsMenuButton
-            )).entity_commands().with_children(|parent| {
-                parent.spawn(TextBundle::from_section(
-                    "< Go Back",
-                    TextStyle {
-                        font: font.clone(),
-                        font_size: 40.0,
-                        color: Color::WHITE,
-                    },
-                ).with_text_justify(JustifyText::Center));
-            });
-        }).style().position_type(PositionType::Absolute);
-    }).id();
+            ));
 
-    ev.send(SpawnSettingsWidget(id));
+            container.game_settings(&asset_server, &settings_res);
+
+            container.row(|buttons| {
+                buttons
+                    .style()
+                    .justify_content(JustifyContent::Center)
+                    .column_gap(Val::Px(100.0));
+
+                buttons.button("< Go Back".into(), 24.0).observe(
+                    |_: Trigger<ButtonPressed>, mut state: ResMut<NextState<InMenuState>>| {
+                        state.set(InMenuState::Default);
+                    },
+                );
+            });
+        });
 }
 
-fn destroy_settings(
-    mut commands: Commands,
-    settings_query: Query<Entity, With<SettingsMenu>>
-) {
+fn destroy_settings(mut commands: Commands, settings_query: Query<Entity, With<SettingsMenu>>) {
     for entity in settings_query.iter() {
         commands.entity(entity).despawn_recursive();
     }
 }
 
-fn on_play_button_pressed(
-    inter_q: Query<&Interaction, With<PlayButton>>,
-    mut state: ResMut<NextState<InMenuState>>,
-    input: Res<ButtonInput<MouseButton>>
+fn setup_player_settings(
+    mut commands: Commands,
+    asset_server: Res<AssetServer>,
+    player_settings_res: Res<PlayerSettings>,
 ) {
-    if let Ok(inter) = inter_q.get_single() {
-        if input.just_released(MouseButton::Left) {
-            if *inter == Interaction::Hovered || *inter == Interaction::Pressed {
-                state.set(InMenuState::WorldScreen);
-            }
-        }
-    }
+    let font = asset_server.load("fonts/nokiafc22.ttf");
+
+    commands
+        .ui_builder(UiRoot)
+        .container(NodeBundle { ..default() }, |container| {
+            container.insert(PlayerSettingsMenu);
+            container.named("Player Customization Menu");
+            container
+                .style()
+                .flex_direction(FlexDirection::Column)
+                .height(Val::Percent(100.0))
+                .width(Val::Percent(100.0))
+                .justify_content(JustifyContent::SpaceAround)
+                .align_items(AlignItems::Center)
+                .align_self(AlignSelf::Center);
+
+            container.spawn(TextBundle::from_section(
+                "Player Customization",
+                TextStyle {
+                    font: font.clone(),
+                    font_size: 100.0,
+                    color: Color::WHITE,
+                    ..default()
+                },
+            ));
+
+            container
+                .player_settings(&player_settings_res)
+                .style()
+                .min_width(Val::Px(500.0));
+
+            container.button("< Go Back".into(), 24.0).observe(
+                |_: Trigger<ButtonPressed>, mut state: ResMut<NextState<InMenuState>>| {
+                    state.set(InMenuState::Default);
+                },
+            );
+        });
 }
 
-fn on_settings_button_pressed(
-    inter_q: Query<&Interaction, With<SettingsButton>>,
-    mut state: ResMut<NextState<InMenuState>>,
-    input: Res<ButtonInput<MouseButton>>
+fn destroy_player_settings(
+    mut commands: Commands,
+    settings_query: Query<Entity, With<PlayerSettingsMenu>>,
 ) {
-    if let Ok(inter) = inter_q.get_single() {
-        if input.just_released(MouseButton::Left) {
-            if *inter == Interaction::Hovered || *inter == Interaction::Pressed {
-                state.set(InMenuState::SettingsMenu);
-            }
-        }
-    }
-}
-
-fn on_exit_settings_pressed(
-    inter_q: Query<&Interaction, With<ExitSettingsMenuButton>>,
-    mut state: ResMut<NextState<InMenuState>>,
-    input: Res<ButtonInput<MouseButton>>
-) {
-    if let Ok(inter) = inter_q.get_single() {
-        if input.just_released(MouseButton::Left) {
-            if *inter == Interaction::Hovered || *inter == Interaction::Pressed {
-                state.set(InMenuState::Default);
-            }
-        }
-    }
-}
-
-fn on_exit_pressed(
-    inter_q: Query<&Interaction, With<QuitButton>>,
-    input: Res<ButtonInput<MouseButton>>,
-    mut exit: EventWriter<AppExit>
-) {
-    if let Ok(inter) = inter_q.get_single() {
-        if input.just_released(MouseButton::Left) {
-            if *inter == Interaction::Hovered || *inter == Interaction::Pressed {
-                exit.send(AppExit);
-            }
-        }
-    }
-}
-
-fn on_exit_world_selection_pressed(
-    inter_q: Query<&Interaction, With<ExitWorldSelectionScreenButton>>,
-    mut state: ResMut<NextState<InMenuState>>,
-    input: Res<ButtonInput<MouseButton>>
-) {
-    if let Ok(inter) = inter_q.get_single() {
-        if input.just_released(MouseButton::Left) {
-            if *inter == Interaction::Hovered || *inter == Interaction::Pressed {
-                state.set(InMenuState::Default);
-            }
-        }
-    }
-}
-
-fn on_play_selected_world_pressed(
-    inter_q: Query<&Interaction, With<PlaySelectedWorldButton>>,
-    input: Res<ButtonInput<MouseButton>>,
-    world_entry_q: Query<&WorldListEntry>,
-    index_res: Res<WorldListEntryEID>,
-    mut world_info_res: ResMut<WorldInfo>,
-    mut state: ResMut<NextState<GameState>>
-) {
-    if let Ok(inter) = inter_q.get_single() {
-        if input.just_released(MouseButton::Left) {
-            if *inter == Interaction::Hovered || *inter == Interaction::Pressed {
-                match index_res.0 {
-                    Some(e) => {
-                        *world_info_res = world_entry_q.get(e).unwrap().world_info.clone();
-                        state.set(GameState::Game);
-                    }
-                    None => {}
-                }
-            }
-        }
-    }
-}
-
-fn on_create_world_pressed(
-    inter_q: Query<&Interaction, With<CreateWorldButton>>,
-    mut world_creation_q: Query<&mut Visibility, With<WorldCreation>>,
-    mut text_input_q: Query<&mut TextInputInactive, With<WorldCreationNameTextInput>>,
-    input: Res<ButtonInput<MouseButton>>
-) {
-    if let Ok(inter) = inter_q.get_single() {
-        if input.just_released(MouseButton::Left) {
-            if *inter == Interaction::Hovered || *inter == Interaction::Pressed {
-                for mut visibility in world_creation_q.iter_mut() {
-                    *visibility = Visibility::Visible;
-                }
-
-                let mut text_input_inactive = text_input_q.get_single_mut().unwrap();
-                *text_input_inactive = TextInputInactive(false);
-            }
-        }
-    }
-}
-
-fn on_open_worlds_folder_pressed(
-    inter_q: Query<&Interaction, With<OpenWorldsFolderButton>>,
-    input: Res<ButtonInput<MouseButton>>
-) {
-    if let Ok(inter) = inter_q.get_single() {
-        if input.just_released(MouseButton::Left) {
-            if *inter == Interaction::Hovered || *inter == Interaction::Pressed {
-                if let Err(e) = opener::open("./worlds") {
-                    error!("Failed opening worlds folder: {}", e);
-                }
-            }
-        }
-    }
-}
-
-fn on_refresh_world_list_pressed(
-    inter_q: Query<&Interaction, With<RefreshWorldListButton>>,
-    input: Res<ButtonInput<MouseButton>>,
-    mut ev: EventWriter<RefreshWorldList>
-) {
-    if let Ok(inter) = inter_q.get_single() {
-        if input.just_released(MouseButton::Left) {
-            if *inter == Interaction::Hovered || *inter == Interaction::Pressed {
-                ev.send(RefreshWorldList);
-            }
-        }
-    }
-}
-
-fn on_create_world_and_play_pressed(
-    inter_q: Query<&Interaction, With<CreateWorldAndPlayButton>>,
-    mut next_state: ResMut<NextState<GameState>>,
-    text_input_query: Query<&TextInputValue, With<WorldCreationNameTextInput>>,
-    world_preset_dropdown_q: Query<&Dropdown, With<WorldGenPresetDropdown>>,
-    input: Res<ButtonInput<MouseButton>>,
-    mut world_info_res: ResMut<WorldInfo>,
-    mut first_time: ResMut<JustCreatedWorld>
-) {
-    if let Ok(inter) = inter_q.get_single() {
-        if input.just_released(MouseButton::Left) {
-            if *inter == Interaction::Hovered || *inter == Interaction::Pressed {
-                let preset = match world_preset_dropdown_q.single().value().unwrap() {
-                    0 => WorldGenPreset::DEFAULT,
-                    1 => WorldGenPreset::FLAT,
-                    2 => WorldGenPreset::EMPTY,
-                    _ => WorldGenPreset::DEFAULT
-                };
-
-                let text_input = text_input_query.single();
-                if text_input.0.trim().is_empty() {
-                    error!("You cannot enter in a empty world name!");
-                    return;
-                }
-
-                let world_name = filenamify(text_input.0.clone()).to_lowercase().replace(" ", "_");
-                info!("World will be saved as '{}'.", world_name.clone());
-
-                let info = WorldInfo {
-                    display_name: text_input.0.clone(),
-                    name: world_name.clone(),
-                    preset,
-                    last_player_pos: Vec2::ZERO
-                };
-
-                *first_time = JustCreatedWorld(true);
-
-                if let Err(e) = fs::create_dir(format!("worlds/{}", world_name.clone())) {
-                    error!("Failed creating world directory for '{}': {}", world_name, e);
-                } else {
-                    if let Err(e) = fs::create_dir(format!("worlds/{}/chunks", world_name.clone())) {
-                        error!("Failed creating the chunks directory for '{}': {}", world_name, e);
-                    }
-                    
-                    match toml::to_string(&info) {
-                        Ok(str) => {
-                            if let Err(e) = fs::write(format!("worlds/{}/world.toml", world_name.clone()), str) {
-                                error!("Could not write the world information into a file: {}", e);
-                            }
-                        },
-                        Err(e) => error!("Could not serialize world information into a string: {}", e),
-                    }
-                }
-
-                *world_info_res = info;
-
-                next_state.set(GameState::Game);
-            }
-        }
-    }
-}
-
-fn on_exit_world_creation_pressed(
-    inter_q: Query<&Interaction, With<ExitWorldCreationButton>>,
-    mut world_creation_q: Query<&mut Visibility, With<WorldCreation>>,
-    mut text_input_q: Query<&mut TextInputInactive, With<WorldCreationNameTextInput>>,
-    input: Res<ButtonInput<MouseButton>>
-) {
-    if let Ok(inter) = inter_q.get_single() {
-        if input.just_released(MouseButton::Left) {
-            if *inter == Interaction::Hovered || *inter == Interaction::Pressed {
-                for mut visibility in world_creation_q.iter_mut() {
-                    *visibility = Visibility::Hidden;
-                }
-
-                let mut text_input_inactive = text_input_q.get_single_mut().unwrap();
-                *text_input_inactive = TextInputInactive(true);
-            }
-        }
+    for entity in settings_query.iter() {
+        commands.entity(entity).despawn_recursive();
     }
 }
 
@@ -912,7 +610,7 @@ fn on_refresh_world_list(
     mut ev: EventReader<RefreshWorldList>,
     world_list_q: Query<Entity, With<WorldListScroll>>,
     mut entry_eid_res: ResMut<WorldListEntryEID>,
-    asset_server: Res<AssetServer>
+    asset_server: Res<AssetServer>,
 ) {
     for _ in ev.read() {
         let mut world_scroll_view = commands.ui_builder(world_list_q.single());
@@ -923,7 +621,7 @@ fn on_refresh_world_list(
         let font = asset_server.load("fonts/nokiafc22.ttf");
 
         let mut found_worlds: bool = false;
-    
+
         match fs::read_dir("worlds") {
             Ok(dirs) => {
                 for dir in dirs {
@@ -933,18 +631,25 @@ fn on_refresh_world_list(
                                 found_worlds = true;
 
                                 let world_name = entry.file_name().into_string().unwrap();
-                                
-                                world_scroll_view.container(NodeBundle {..default()}, |world_thing| {
-                                    match fs::read_to_string(format!("{}/world.toml", entry.path().display())) {
-                                        Ok(str) => {
-                                            match toml::from_str::<WorldInfo>(&str) {
-                                                Ok(world_info) => {
 
-                                                    world_thing.spawn((
-                                                        Name::new(format!("World entry: {}", world_name)),
+                                world_scroll_view.container(
+                                    NodeBundle { ..default() },
+                                    |world_thing| match fs::read_to_string(format!(
+                                        "{}/world.toml",
+                                        entry.path().display()
+                                    )) {
+                                        Ok(str) => match toml::from_str::<WorldInfo>(&str) {
+                                            Ok(world_info) => {
+                                                world_thing
+                                                    .spawn((
+                                                        Name::new(format!(
+                                                            "World entry: {}",
+                                                            world_name
+                                                        )),
                                                         ButtonBundle {
                                                             style: Style {
-                                                                flex_direction: FlexDirection::Column,
+                                                                flex_direction:
+                                                                    FlexDirection::Column,
                                                                 border: UiRect::all(Val::Px(2.0)),
                                                                 margin: UiRect::all(Val::Px(5.0)),
                                                                 padding: UiRect::all(Val::Px(5.0)),
@@ -953,62 +658,98 @@ fn on_refresh_world_list(
                                                             },
                                                             ..default()
                                                         },
-                                                        WorldListEntry {world_info: world_info.clone()}
-                                                    )).style().background_color(Color::rgba(0.0, 0.0, 0.0, 0.0)).entity_commands().with_children(|parent| {
-                                                        parent.spawn(
-                                                            TextBundle::from_section(world_info.display_name, TextStyle {
+                                                        WorldListEntry {
+                                                            world_info: world_info.clone(),
+                                                        },
+                                                    ))
+                                                    .style()
+                                                    .background_color(Color::srgba(
+                                                        0.0, 0.0, 0.0, 0.0,
+                                                    ))
+                                                    .entity_commands()
+                                                    .with_children(|parent| {
+                                                        parent.spawn(TextBundle::from_section(
+                                                            world_info.display_name,
+                                                            TextStyle {
                                                                 font: font.clone(),
                                                                 font_size: 30.0,
                                                                 color: Color::WHITE,
-                                                        }));
-    
-                                                        let world_preset_string = match world_info.preset {
+                                                            },
+                                                        ));
+
+                                                        let world_preset_string = match world_info
+                                                            .preset
+                                                        {
                                                             WorldGenPreset::DEFAULT => "Default",
                                                             WorldGenPreset::FLAT => "Flat",
-                                                            WorldGenPreset::EMPTY => "Empty"
+                                                            WorldGenPreset::EMPTY => "Empty",
                                                         };
-    
-                                                        parent.spawn(
-                                                            TextBundle::from_section(format!("Type: {}", world_preset_string), TextStyle {
+
+                                                        parent.spawn(TextBundle::from_section(
+                                                            format!(
+                                                                "Type: {}",
+                                                                world_preset_string
+                                                            ),
+                                                            TextStyle {
                                                                 font: font.clone(),
                                                                 font_size: 20.0,
                                                                 color: Color::WHITE,
-                                                        }));
-                                                        
-                                                        parent.spawn(
-                                                            TextBundle::from_section(format!("Saved as: {}", world_name), TextStyle {
+                                                            },
+                                                        ));
+
+                                                        parent.spawn(TextBundle::from_section(
+                                                            format!("Saved as: {}", world_name),
+                                                            TextStyle {
                                                                 font: font.clone(),
                                                                 font_size: 16.0,
-                                                                color: Color::GRAY,
-                                                        }));
+                                                                color: GRAY.into(),
+                                                            },
+                                                        ));
                                                     });
-                                                },
-                                                Err(e) => error!("Failed to parse world.toml for world '{}': {}", world_name, e)
                                             }
+                                            Err(e) => error!(
+                                                "Failed to parse world.toml for world '{}': {}",
+                                                world_name, e
+                                            ),
                                         },
                                         Err(e) => {
-                                            error!("Failed to read world.toml from '{}' world: {}", world_name, e);
+                                            error!(
+                                                "Failed to read world.toml from '{}' world: {}",
+                                                world_name, e
+                                            );
                                         }
-                                    }
-                                });
+                                    },
+                                );
                             }
-                        },
-                        Err(e) => error!("An error ocurred when reading a world directory entry: {}", e)
+                        }
+                        Err(e) => error!(
+                            "An error ocurred when reading a world directory entry: {}",
+                            e
+                        ),
                     }
                 }
-            },
-            Err(e) => error!("An error occurred when checking for worlds directory: {}", e)
+            }
+            Err(e) => error!(
+                "An error occurred when checking for worlds directory: {}",
+                e
+            ),
         }
-    
+
         if !found_worlds {
-            world_scroll_view.spawn(
-                TextBundle::from_section("No worlds were found.",
-                TextStyle {
-                    font: font.clone(),
-                    font_size: 24.0,
-                    color: Color::GRAY,
-                }).with_text_justify(JustifyText::Center)
-            ).style().height(Val::Percent(100.0));
+            world_scroll_view
+                .spawn(
+                    TextBundle::from_section(
+                        "No worlds were found.",
+                        TextStyle {
+                            font: font.clone(),
+                            font_size: 24.0,
+                            color: GRAY.into(),
+                        },
+                    )
+                    .with_text_justify(JustifyText::Center),
+                )
+                .style()
+                .height(Val::Percent(100.0));
         }
     }
 }
@@ -1020,7 +761,7 @@ fn world_list_entry_system(
     mouse_input: Res<ButtonInput<MouseButton>>,
     mut entry_eid: ResMut<WorldListEntryEID>,
     mut next_state: ResMut<NextState<GameState>>,
-    mut world_info_res: ResMut<WorldInfo>
+    mut world_info_res: ResMut<WorldInfo>,
 ) {
     if mouse_input.just_pressed(MouseButton::Left) {
         let mut entry_eid_d: Entity = Entity::PLACEHOLDER;
@@ -1035,50 +776,19 @@ fn world_list_entry_system(
         if entry_eid_d != Entity::PLACEHOLDER {
             if entry_eid.0 != Some(entry_eid_d) {
                 for mut bc in entry_border_q.iter_mut() {
-                    *bc = BorderColor(Color::rgba(0., 0., 0., 0.));
+                    *bc = BorderColor(Color::srgba(0., 0., 0., 0.));
                 }
 
                 let mut border_color = entry_border_q.get_mut(entry_eid_d).unwrap();
-                *border_color = Color::GRAY.into();
+                *border_color = GRAY.into();
                 entry_eid.0 = Some(entry_eid_d);
             } else {
-                *world_info_res = entry_worldinfo_q.get(entry_eid_d).unwrap().world_info.clone();
+                *world_info_res = entry_worldinfo_q
+                    .get(entry_eid_d)
+                    .unwrap()
+                    .world_info
+                    .clone();
                 next_state.set(GameState::Game);
-            }
-        }
-    }
-}
-
-fn button_system(
-    mut interaction_query: Query<
-        (
-            &Interaction,
-            &mut BackgroundColor,
-            &mut BorderColor,
-            &Children
-        ),
-        (Changed<Interaction>, With<Button>, Without<WorldListEntry>),
-    >,
-    mut text_query: Query<&mut Text>,
-) {
-    for (interaction, mut color, mut border_color, children) in &mut interaction_query {
-        if let Ok(mut text) = text_query.get_mut(children[0]) {
-            match *interaction {
-                Interaction::None => {
-                    *color = BackgroundColor(Color::BLACK);
-                    border_color.0 = Color::WHITE;
-                    text.sections[0].style.color = Color::WHITE;
-                },
-                Interaction::Hovered => {
-                    *color = BackgroundColor(Color::GRAY);
-                    border_color.0 = Color::WHITE;
-                    text.sections[0].style.color = Color::WHITE;
-                }
-                Interaction::Pressed => {
-                    *color = BackgroundColor(Color::WHITE);
-                    border_color.0 = Color::BLACK;
-                    text.sections[0].style.color = Color::BLACK;
-                },
             }
         }
     }
