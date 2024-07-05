@@ -440,21 +440,17 @@ fn generate_chunk(chunk_pos: IVec2, world_preset: WorldGenPreset) -> ChunkGenera
         WorldGenPreset::DEFAULT => {
             for x in 0..CHUNK_WIDTH {
                 for y in (0..CHUNK_WIDTH).rev() {
-                    let global_pos =
-                        (chunk_pos * CHUNK_WIDTH as i32) + IVec2::new(x as i32, y as i32);
+                    let global_pos = IVec2::new((chunk_pos.x * CHUNK_WIDTH as i32) + x as i32, (chunk_pos.y * CHUNK_WIDTH as i32) + y as i32);
+                    //let s = (f32::sin(global_pos.x as f32 / CHUNK_WIDTH as f32) * CHUNK_WIDTH as f32).floor() as i32;
                     let noise = Fbm::<Perlin>::new(0);
-                    let surface = (noise
-                        .get((global_pos.as_dvec2() / CHUNK_WIDTH as f64).to_array())
-                        * CHUNK_WIDTH as f64)
-                        .floor() as i32;
+                    let s = (noise.get([global_pos.x as f64 / CHUNK_WIDTH as f64, global_pos.x as f64 / CHUNK_WIDTH as f64]) * CHUNK_WIDTH as f64).floor() as i32;
 
-                    let i = get_index_from_position(UVec2::new(x as u32, y as u32));
-                    if global_pos.y == surface {
-                        blocks[i] = BlockType::GRASS;
-                        walls[i] = BlockType::GRASS;
-                    } else if global_pos.y < surface {
-                        blocks[i] = BlockType::DIRT;
-                        walls[i] = BlockType::DIRT;
+                    if global_pos.y == s {
+                        blocks[get_index_from_position(UVec2::new(x as u32, y as u32))] = BlockType::GRASS;           
+                        walls[get_index_from_position(UVec2::new(x as u32, y as u32))] = BlockType::GRASS;
+                    } else if global_pos.y < s {
+                        blocks[get_index_from_position(UVec2::new(x as u32, y as u32))] = BlockType::DIRT;           
+                        walls[get_index_from_position(UVec2::new(x as u32, y as u32))] = BlockType::DIRT;
                     }
                 }
             }
