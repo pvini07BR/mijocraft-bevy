@@ -4,3 +4,5 @@
 /analyzercheck
 /.idea
 Cargo.lock
+game_settings.toml
+player_settings.toml

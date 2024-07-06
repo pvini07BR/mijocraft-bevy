@@ -9,6 +9,7 @@ use bevy_xpbd_2d::{
     },
     SubstepSchedule, SubstepSet,
 };
+use serde::{Deserialize, Serialize};
 use std::f32::consts::FRAC_PI_2;
 
 use crate::world::{FromWorld, WorldInfo};
@@ -36,7 +37,7 @@ struct PlayerSprite {
     pub rotation: f32,
 }
 
-#[derive(Resource, Reflect, Default)]
+#[derive(Resource, Reflect, Default, Serialize, Deserialize)]
 #[reflect(Resource)]
 pub struct PlayerSettings {
     pub nickname: String,

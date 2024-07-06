@@ -10,6 +10,8 @@ mod world;
 use bevy::prelude::*;
 use bevy_xpbd_2d::prelude::*;
 use menu::MenuPlugin;
+use player::PlayerSettings;
+use serde::{Deserialize, Serialize};
 use sickle_ui::prelude::ThemeData;
 use std::{fs, io::ErrorKind};
 use world::WorldPlugin;
@@ -29,7 +31,7 @@ pub enum GamePauseState {
     Paused,
 }
 
-#[derive(Resource, Reflect, Default, Clone)]
+#[derive(Resource, Reflect, Default, Clone, Serialize, Deserialize)]
 #[reflect(Resource)]
 pub struct GameSettings {
     pub wall_ambient_occlusion: bool,
@@ -58,9 +60,57 @@ fn main() {
         .add_sub_state::<GamePauseState>()
         .add_systems(
             Startup,
-            (setup_theme, setup_worlds_folder, spawn_camera).chain(),
+            (read_settings, setup_theme, setup_worlds_folder, spawn_camera).chain(),
         )
+        .add_systems(Update, (on_game_settings_changed, on_player_settings_changed))
         .run();
+}
+
+fn read_settings(
+    mut game_settings: ResMut<GameSettings>,
+    mut player_settings: ResMut<PlayerSettings>
+) {
+    if let Ok(string) = fs::read_to_string("./game_settings.toml") {
+        if let Ok(settings) = toml::from_str::<GameSettings>(&string) {
+            *game_settings = settings;
+        }
+    }
+
+    if let Ok(string) = fs::read_to_string("./player_settings.toml") {
+        if let Ok(new_player_set) = toml::from_str::<PlayerSettings>(&string) {
+            *player_settings = new_player_set;
+        }
+    }
+}
+
+fn on_game_settings_changed(
+    settings: Res<GameSettings>
+) {
+    if settings.is_changed() {
+        match toml::to_string(&*settings) {
+            Ok(string) => {
+                if let Err(e) = fs::write("./game_settings.toml", string) {
+                    error!("Failed to save game settings to file: {}", e);
+                }
+            },
+            Err(e) => error!("Failed to make game settings a string: {}", e)
+        }
+    }
+}
+
+fn on_player_settings_changed(
+    player_set: Res<PlayerSettings>
+) {
+    if player_set.is_changed() {
+        match toml::to_string(&*player_set) {
+            Ok(string) => {
+                if let Err(e) = fs::write("./player_settings.toml", string) {
+                    error!("Failed to save player settings to file: {}", e);
+                }
+            },
+            Err(e) => error!("Failed to make player settings a string: {}", e)
+        }
+    }
 }
 
 fn setup_theme(mut theme_data: ResMut<ThemeData>) {
