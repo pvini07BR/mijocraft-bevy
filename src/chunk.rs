@@ -21,12 +21,9 @@ use bevy_xpbd_2d::prelude::*;
 use enum_iterator::Sequence;
 
 use crate::{
-    chunk_manager::Chunks,
-    utils::{
-        get_global_position, get_index_from_position, get_neighboring_lights,
-        get_position_from_index,
-    },
-    GameState,
+    chunk_manager::Chunks, utils::{
+        get_global_position, get_index_from_position, get_neighboring_blocks, get_neighboring_blocks_with_corners, get_neighboring_lights, get_neighboring_lights_with_corners, get_position_from_index
+    }, GameSettings, GameState
 };
 
 #[derive(Clone, Copy, Debug, PartialEq)]
@@ -115,10 +112,8 @@ fn calculate_lighting(mut chunks: ResMut<Chunks>, mut calc_light_ev: EventReader
             for (chunk_pos, chunk) in chunks.iter() {
                 let mut light = [0; CHUNK_AREA];
                 for i in 0..CHUNK_AREA {
-                    if chunk.layers[PlaceMode::BLOCK as usize][i] <= BlockType::AIR
-                        && chunk.layers[PlaceMode::WALL as usize][i] <= BlockType::AIR
-                        || chunk.layers[PlaceMode::BLOCK as usize][i].is_transparent()
-                        || chunk.layers[PlaceMode::WALL as usize][i].is_transparent()
+                    if chunk.layers[PlaceMode::BLOCK as usize][i].is_transparent()
+                        && chunk.layers[PlaceMode::WALL as usize][i].is_transparent()
                     {
                         light[i] = 15;
                     } else {
@@ -153,6 +148,7 @@ fn remesh(
     chunk_query: Query<(&Children, &ChunkComponent)>,
     chunk_layer_query: Query<&Mesh2dHandle, With<ChunkLayer>>,
     mut meshes: ResMut<Assets<Mesh>>,
+    settings_res: Res<GameSettings>
 ) {
     for _ in remesh_chunk_ev.read() {
         for (chunk_children, chunk_comp) in chunk_query.iter() {
@@ -170,7 +166,7 @@ fn remesh(
                 let mut vertex_positions = vec![[0.0; 3]; CHUNK_MESH_SIZE];
                 let mut vertex_colors = vec![[0.0; 4]; CHUNK_MESH_SIZE];
                 let mut vertex_uvs = vec![[0.0; 2]; CHUNK_MESH_SIZE];
-                let indices: Vec<u32> = generate_chunk_indices();
+                let mut indices: Vec<u32> = generate_chunk_indices();
 
                 for i in 0..CHUNK_AREA {
                     let position = get_position_from_index(i);
@@ -196,14 +192,125 @@ fn remesh(
                     vertex_positions[3] = p(false, true);
 
                     // Vertex Colors
+                    // ...and also smooth lighting.
+                    let wall_darkness = settings_res.wall_darkness;
                     let light = chunk.light[i] as f32 / 15.0;
+    
                     let color = match li == PlaceMode::WALL as usize {
                         false => Color::srgb(light, light, light),
-                        true => Color::srgb(0.5 * light, 0.5 * light, 0.5 * light),
+                        true => Color::srgb(wall_darkness * light, wall_darkness * light, wall_darkness * light),
                     };
 
                     for vertex_color in vertex_colors[i * VERTICES_PER_BLOCK..].iter_mut().take(4) {
                         *vertex_color = color.to_linear().to_vec4().to_array();
+                    }
+
+                    if settings_res.smooth_lighting {
+                        let global = get_global_position(chunk_comp.position, position);
+                        if let Some(neighbors) = get_neighboring_lights_with_corners(&chunks, global) {
+                            let get_color = |f_light: f32| -> [f32; 4] {
+                                if li == PlaceMode::BLOCK as usize {
+                                    return [f_light, f_light, f_light, 1.0];
+                                } else {
+                                    return [wall_darkness * f_light, wall_darkness * f_light, wall_darkness * f_light, 1.0];
+                                }
+                            };
+
+                            let normalize_light = |light: u8| { return light as f32 / 15.0; };
+
+                            // Bottom Left vertex
+                            let average = (
+                                normalize_light(neighbors[0]) + // Center
+                                normalize_light(neighbors[4]) + // Left
+                                normalize_light(neighbors[5]) + // Bottom Left
+                                normalize_light(neighbors[1])   // Down
+                            ) / 4.0;
+                            vertex_colors[i * VERTICES_PER_BLOCK + 0] = get_color(average);
+
+                            // Bottom Right vertex
+                            let average = (
+                                normalize_light(neighbors[0]) + // Center
+                                normalize_light(neighbors[2]) + // Right
+                                normalize_light(neighbors[6]) + // Bottom Right
+                                normalize_light(neighbors[1])   // Down
+                            ) / 4.0;
+                            vertex_colors[i * VERTICES_PER_BLOCK + 1] = get_color(average);
+
+                            // Top Right vertex
+                            let average = (
+                                normalize_light(neighbors[0]) + // Center
+                                normalize_light(neighbors[2]) + // Right
+                                normalize_light(neighbors[7]) + // Top Right
+                                normalize_light(neighbors[3])   // Up
+                            ) / 4.0;
+                            vertex_colors[i * VERTICES_PER_BLOCK + 2] = get_color(average);
+
+                            // Top Left vertex
+                            let average = (
+                                normalize_light(neighbors[0]) + // Center
+                                normalize_light(neighbors[4]) + // Left
+                                normalize_light(neighbors[8]) + // Top Left
+                                normalize_light(neighbors[3])   // Up
+                            ) / 4.0;
+                            vertex_colors[i * VERTICES_PER_BLOCK + 3] = get_color(average);
+                        }
+                    }
+
+                    // Wall Ambient Occlusion
+                    if settings_res.wall_ambient_occlusion && li == PlaceMode::WALL as usize {
+                        let global = get_global_position(chunk_comp.position, position);
+                        if let Some(neighbors) = get_neighboring_blocks_with_corners(&chunks, global, PlaceMode::BLOCK) {
+                            let ao_color: [f32; 4] = [0.1 * light, 0.1 * light, 0.1 * light, 1.0];
+
+                            // Down
+                            if !neighbors[1].is_transparent() {
+                                vertex_colors[i * VERTICES_PER_BLOCK + 0] = ao_color;
+                                vertex_colors[i * VERTICES_PER_BLOCK + 1] = ao_color;
+                            }
+
+                            // Right
+                            if !neighbors[2].is_transparent() {
+                                vertex_colors[i * VERTICES_PER_BLOCK + 1] = ao_color;
+                                vertex_colors[i * VERTICES_PER_BLOCK + 2] = ao_color;
+                            }
+
+                            // Up
+                            if !neighbors[3].is_transparent() {
+                                vertex_colors[i * VERTICES_PER_BLOCK + 2] = ao_color;
+                                vertex_colors[i * VERTICES_PER_BLOCK + 3] = ao_color;
+                            }
+
+                            // Left
+                            if !neighbors[4].is_transparent() {
+                                vertex_colors[i * VERTICES_PER_BLOCK + 0] = ao_color;
+                                vertex_colors[i * VERTICES_PER_BLOCK + 3] = ao_color;
+                            }
+
+                            // Now check for the corners!!
+                            // ===========================
+
+                            // Bottom Left
+                            if !neighbors[5].is_transparent() {
+                                vertex_colors[i * VERTICES_PER_BLOCK + 0] = ao_color;
+                                flip_quad(i, &mut indices);
+                            }
+
+                            // Bottom Right
+                            if !neighbors[6].is_transparent() {
+                                vertex_colors[i * VERTICES_PER_BLOCK + 1] = ao_color;
+                            }
+
+                            // Top Right
+                            if !neighbors[7].is_transparent() {
+                                vertex_colors[i * VERTICES_PER_BLOCK + 2] = ao_color;
+                                flip_quad(i, &mut indices);
+                            }
+
+                            // Top Left
+                            if !neighbors[8].is_transparent() {
+                                vertex_colors[i * VERTICES_PER_BLOCK + 3] = ao_color;
+                            }
+                        }                        
                     }
 
                     // Set block UVs

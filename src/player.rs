@@ -372,9 +372,9 @@ fn darken_player(
                 );
                 let relative = get_relative_position(player_position, chunk_pos_res.position);
 
-                player_sprite.color = (player_settings.color.to_linear()
-                    * (chunk.light[get_index_from_position(relative)] as f32 / 15.0))
-                    .into();
+                let light = chunk.light[get_index_from_position(relative)] as f32 / 15.0;
+                let c = player_settings.color.to_linear();
+                player_sprite.color = Color::srgb(c.red * light, c.green * light, c.blue * light);
             }
         }
     }

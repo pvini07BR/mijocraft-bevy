@@ -113,9 +113,9 @@ pub fn get_neighboring_blocks(
     layer: PlaceMode,
 ) -> Option<[BlockType; 5]> {
     // 0 = Center
-    // 1 = Up
+    // 1 = Down
     // 2 = Right
-    // 3 = Down
+    // 3 = Up
     // 4 = Left
     let mut neighbors: [BlockType; 5] = [BlockType::AIR; 5];
 
@@ -124,7 +124,51 @@ pub fn get_neighboring_blocks(
     if let Some(chunk) = chunks_res.get(&chunk_pos) {
         neighbors[0] = chunk.layers[layer as usize][get_index_from_position(relative_position)];
 
-        let directions = [IVec2::Y, IVec2::X, IVec2::NEG_Y, IVec2::NEG_X];
+        let directions = [IVec2::NEG_Y, IVec2::X, IVec2::Y, IVec2::NEG_X];
+
+        for i in 0..directions.len() {
+            let neighbor_pos = block_position + directions[i];
+            let neighbor_chunk = get_chunk_position(neighbor_pos);
+            if neighbor_chunk == chunk_pos {
+                let rel = get_relative_position(neighbor_pos, chunk_pos);
+                neighbors[i + 1] = chunk.layers[layer as usize][get_index_from_position(rel)];
+            } else {
+                if let Some(c) = chunks_res.get(&neighbor_chunk) {
+                    let rel2 = get_relative_position(neighbor_pos, neighbor_chunk);
+                    neighbors[i + 1] = c.layers[layer as usize][get_index_from_position(rel2)];
+                }
+            }
+        }
+
+        return Some(neighbors);
+    } else {
+        return None;
+    }
+}
+
+pub fn get_neighboring_blocks_with_corners(
+    chunks_res: &HashMap<IVec2, Chunk>,
+    block_position: IVec2,
+    layer: PlaceMode,
+) -> Option<[BlockType; 9]> {
+    // 0 = Center
+    // 1 = Down
+    // 2 = Right
+    // 3 = Up
+    // 4 = Left
+    // 5 = Bottom Left
+    // 6 = Bottom Right
+    // 7 = Top Right
+    // 8 = Top Left
+
+    let mut neighbors: [BlockType; 9] = [BlockType::AIR; 9];
+
+    let chunk_pos = get_chunk_position(block_position);
+    let relative_position = get_relative_position(block_position, chunk_pos);
+    if let Some(chunk) = chunks_res.get(&chunk_pos) {
+        neighbors[0] = chunk.layers[layer as usize][get_index_from_position(relative_position)];
+
+        let directions = [IVec2::NEG_Y, IVec2::X, IVec2::Y, IVec2::NEG_X, IVec2::new(-1, -1), IVec2::new(1, -1), IVec2::new(1, 1), IVec2::new(-1, 1)];
 
         for i in 0..directions.len() {
             let neighbor_pos = block_position + directions[i];
@@ -151,9 +195,9 @@ pub fn get_neighboring_lights(
     block_position: IVec2,
 ) -> Option<[u8; 5]> {
     // 0 = Center
-    // 1 = Up
+    // 1 = Down
     // 2 = Right
-    // 3 = Down
+    // 3 = Up
     // 4 = Left
     let mut neighbors: [u8; 5] = [0; 5];
 
@@ -162,7 +206,50 @@ pub fn get_neighboring_lights(
     if let Some(chunk) = chunks_res.get(&chunk_pos) {
         neighbors[0] = chunk.light[get_index_from_position(relative_position)];
 
-        let directions = [IVec2::Y, IVec2::X, IVec2::NEG_Y, IVec2::NEG_X];
+        let directions = [IVec2::NEG_Y, IVec2::X, IVec2::Y, IVec2::NEG_X];
+
+        for i in 0..directions.len() {
+            let neighbor_pos = block_position + directions[i];
+            let neighbor_chunk = get_chunk_position(neighbor_pos);
+            if neighbor_chunk == chunk_pos {
+                let rel = get_relative_position(neighbor_pos, chunk_pos);
+                neighbors[i + 1] = chunk.light[get_index_from_position(rel)];
+            } else {
+                if let Some(c) = chunks_res.get(&neighbor_chunk) {
+                    let rel2 = get_relative_position(neighbor_pos, neighbor_chunk);
+                    neighbors[i + 1] = c.light[get_index_from_position(rel2)];
+                }
+            }
+        }
+
+        return Some(neighbors);
+    } else {
+        return None;
+    }
+}
+
+pub fn get_neighboring_lights_with_corners(
+    chunks_res: &HashMap<IVec2, Chunk>,
+    block_position: IVec2,
+) -> Option<[u8; 9]> {
+    // 0 = Center
+    // 1 = Down
+    // 2 = Right
+    // 3 = Up
+    // 4 = Left
+    // 5 = Bottom Left
+    // 6 = Bottom Right
+    // 7 = Top Right
+    // 8 = Top Left
+
+    let mut neighbors: [u8; 9] = [0; 9];
+
+    let chunk_pos = get_chunk_position(block_position);
+    let relative_position = get_relative_position(block_position, chunk_pos);
+    if let Some(chunk) = chunks_res.get(&chunk_pos) {
+        neighbors[0] = chunk.light[get_index_from_position(relative_position)];
+
+        let directions = [IVec2::NEG_Y, IVec2::X, IVec2::Y, IVec2::NEG_X, IVec2::new(-1, -1), IVec2::new(1, -1), IVec2::new(1, 1), IVec2::new(-1, 1)];
 
         for i in 0..directions.len() {
             let neighbor_pos = block_position + directions[i];

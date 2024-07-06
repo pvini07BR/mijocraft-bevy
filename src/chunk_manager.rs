@@ -15,10 +15,7 @@ use crate::{
     chunk::{
         generate_chunk_layer_mesh, BlockType, CalcLightChunks, Chunk, ChunkComponent, ChunkLayer,
         ChunkPlugin, PlaceMode, RecollisionChunk, RemeshChunks, CHUNK_AREA, CHUNK_WIDTH, TILE_SIZE,
-    },
-    utils::*,
-    world::{WorldGenPreset, WorldInfo},
-    MainCamera,
+    }, utils::*, world::{WorldGenPreset, WorldInfo}, GameSettings, MainCamera
 };
 use crate::{player::Player, world::FromWorld, GameState};
 
@@ -76,6 +73,7 @@ impl Plugin for ChunkManagerPlugin {
         app.add_systems(
             Update,
             (
+                on_game_settings_changed,
                 unload_and_save_chunks,
                 load_chunks,
                 process_chunk_loading_tasks,
@@ -270,6 +268,15 @@ fn save_all_chunks(
         }
 
         finished_saving_ev.send(FinishedSavingChunks);
+    }
+}
+
+fn on_game_settings_changed(
+    game_settings_res: Res<GameSettings>,
+    mut remesh_chunk_ev: EventWriter<RemeshChunks>
+) {
+    if game_settings_res.is_changed() {
+        remesh_chunk_ev.send(RemeshChunks);
     }
 }
 
