@@ -456,7 +456,8 @@ fn setup_world_screen_menu(
                         display_name: text_input.0.clone(),
                         name: world_name.clone(),
                         preset,
-                        player_position: None
+                        player_position: None,
+                        is_flying: false
                     };
 
                     *first_time = JustCreatedWorld(true);

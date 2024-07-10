@@ -312,6 +312,7 @@ fn remesh(
                             if !neighbors[1].is_transparent() {
                                 vertex_colors[i * VERTICES_PER_BLOCK + 0] = ao_color;
                                 vertex_colors[i * VERTICES_PER_BLOCK + 1] = ao_color;
+                                //flip_quad(i, &mut indices);
                             }
 
                             // Right
@@ -338,12 +339,13 @@ fn remesh(
                             // Bottom Left
                             if !neighbors[5].is_transparent() {
                                 vertex_colors[i * VERTICES_PER_BLOCK + 0] = ao_color;
-                                flip_quad(i, &mut indices);
+                               flip_quad(i, &mut indices);
                             }
 
                             // Bottom Right
                             if !neighbors[6].is_transparent() {
                                 vertex_colors[i * VERTICES_PER_BLOCK + 1] = ao_color;
+                                //flip_quad(i, &mut indices);
                             }
 
                             // Top Right
@@ -355,6 +357,7 @@ fn remesh(
                             // Top Left
                             if !neighbors[8].is_transparent() {
                                 vertex_colors[i * VERTICES_PER_BLOCK + 3] = ao_color;
+                                //flip_quad(i, &mut indices);
                             }
                         }
                     }

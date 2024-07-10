@@ -241,7 +241,7 @@ fn try_to_place_block_event(
 }
 
 fn save_all_chunks(
-    player_q: Query<&Transform, With<Player>>,
+    player_q: Query<(&Transform, &Player)>,
     mut save_chunks_ev: EventReader<SaveAllChunks>,
     mut finished_saving_ev: EventWriter<FinishedSavingChunks>,
     chunks_res: Res<Chunks>,
@@ -271,9 +271,10 @@ fn save_all_chunks(
             }
         }
 
-        if let Ok(player_transform) = player_q.get_single() {
+        if let Ok((player_transform, player)) = player_q.get_single() {
             let mut new_info = world_info_res.clone();
             new_info.player_position = Some(player_transform.translation.xy() / TILE_SIZE as f32);
+            new_info.is_flying = player.noclip;
 
             if let Ok(str) = toml::to_string(&new_info) {
                 let _ = std::fs::write(format!("worlds/{}/world.toml", new_info.name), str);

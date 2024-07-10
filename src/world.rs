@@ -26,6 +26,7 @@ pub struct WorldInfo {
     pub name: String,
     pub preset: WorldGenPreset,
     pub player_position: Option<Vec2>, // THIS IS IN BLOCK UNITS!!!
+    pub is_flying: bool
 }
 
 #[derive(Component)]
@@ -58,6 +59,7 @@ impl Plugin for WorldPlugin {
             name: "".to_string(),
             preset: WorldGenPreset::default(),
             player_position: None,
+            is_flying: false
         })
         .insert_resource(Gravity(Vec2::NEG_Y * (9.81 * TILE_SIZE as f32)))
         .register_type::<WorldInfo>()

@@ -144,7 +144,7 @@ fn spawn_player(
             Player {
                 is_on_ground: false,
                 direction: 0,
-                noclip: false,
+                noclip: world_info_res.is_flying,
             },
             FromWorld,
         ))
@@ -272,8 +272,12 @@ fn player_input(
         let mut speed: f32 = TILE_SIZE as f32 * 10.0;
         let jump_force = 16.0 * TILE_SIZE as f32;
 
-        if keyboard_input.pressed(KeyCode::ShiftLeft) {
+        if keyboard_input.pressed(KeyCode::ControlLeft) {
             speed *= 2.0;
+        }
+
+        if keyboard_input.pressed(KeyCode::ShiftLeft) {
+            speed /= 4.0;
         }
 
         if keyboard_input.just_pressed(KeyCode::KeyF) {
