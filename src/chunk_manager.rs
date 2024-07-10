@@ -15,15 +15,19 @@ use crate::{
     chunk::{
         generate_chunk_layer_mesh, BlockType, CalcLightChunks, Chunk, ChunkComponent, ChunkLayer,
         ChunkPlugin, PlaceMode, RecollisionChunk, RemeshChunks, CHUNK_AREA, CHUNK_WIDTH, TILE_SIZE,
-    }, utils::*, world::{WorldGenPreset, WorldInfo}, GameSettings, MainCamera
+    },
+    utils::*,
+    world::{WorldGenPreset, WorldInfo},
+    GameSettings, MainCamera,
 };
 use crate::{player::Player, world::FromWorld, GameState};
 
 #[derive(Event)]
 pub struct TryPlaceBlock {
+    pub position: UVec2,
+    pub chunk_position: IVec2,
     pub layer: PlaceMode,
-    pub position: IVec2,
-    pub id: BlockType,
+    pub block_type: BlockType,
 }
 
 #[derive(Event)]
@@ -181,47 +185,56 @@ fn try_to_place_block_event(
     chunk_query: Query<(Entity, &ChunkComponent)>,
 ) {
     for ev in try_place_block_ev.read() {
-        let chunk_position = get_chunk_position(ev.position);
-        let relative_pos = get_relative_position(ev.position, chunk_position);
-        let block_neighbors = get_neighboring_blocks(&chunks_res, ev.position, PlaceMode::BLOCK);
-        let wall_neighbors = get_neighboring_blocks(&chunks_res, ev.position, PlaceMode::WALL);
-
-        let Some(chunk) = chunks_res.get_mut(&chunk_position) else {
+        let Some(chunk) = chunks_res.get(&ev.chunk_position) else {
             continue;
         };
-        let index = get_index_from_position(relative_pos);
+        let index = get_index_from_position(ev.position);
 
-        if ev.id > BlockType::AIR {
+        if ev.block_type > BlockType::AIR {
+            // We are placing a block
             if chunk.layers[ev.layer as usize][index] > BlockType::AIR {
                 continue;
-            }
-            let (Some(bn), Some(wn)) = (block_neighbors, wall_neighbors) else {
+            };
+
+            let global_position = (ev.chunk_position * CHUNK_WIDTH as i32) + ev.position.as_ivec2();
+            let Some(block_neighbors) =
+                get_neighboring_blocks(&chunks_res, global_position, PlaceMode::BLOCK)
+            else {
                 continue;
             };
-            // idk what to call this
-            let aaa = |nbors: [BlockType; 5], start: usize, end: usize| {
-                nbors[start..=end].iter().any(|&nbor| nbor > BlockType::AIR)
+            let Some(wall_neighbors) =
+                get_neighboring_blocks(&chunks_res, global_position, PlaceMode::WALL)
+            else {
+                continue;
             };
-            match ev.layer {
-                PlaceMode::BLOCK if aaa(wn, 0, 0) || aaa(bn, 1, 4) => {
-                    chunk.layers[PlaceMode::BLOCK as usize][index] = ev.id
-                }
-                PlaceMode::WALL if aaa(wn, 1, 4) || aaa(bn, 0, 4) => {
-                    chunk.layers[PlaceMode::WALL as usize][index] = ev.id
-                }
-                _ => {}
+
+            if block_neighbors.iter().any(|&t| t > BlockType::AIR)
+                || wall_neighbors.iter().any(|&t| t > BlockType::AIR)
+            {
+                let Some(chunk) = chunks_res.get_mut(&ev.chunk_position) else {
+                    continue;
+                };
+                chunk.layers[ev.layer as usize][index] = ev.block_type;
             }
         } else {
-            if chunk.layers[ev.layer as usize][index] > BlockType::AIR {
-                chunk.layers[ev.layer as usize][index] = BlockType::AIR;
-            }
+            // We are destroying a block
+            if chunk.layers[ev.layer as usize][index] <= BlockType::AIR {
+                continue;
+            };
+
+            let Some(chunk) = chunks_res.get_mut(&ev.chunk_position) else {
+                continue;
+            };
+
+            chunk.layers[ev.layer as usize][index] = BlockType::AIR;
         }
 
         calc_light_ev.send(CalcLightChunks);
         remesh_chunk_ev.send(RemeshChunks);
         for (entity, chunk_compo) in chunk_query.iter() {
-            if chunk_compo.position == chunk_position {
+            if chunk_compo.position == ev.chunk_position {
                 recol_chunk_ev.send(RecollisionChunk { entity });
+                break;
             }
         }
     }
@@ -273,7 +286,7 @@ fn save_all_chunks(
 
 fn on_game_settings_changed(
     game_settings_res: Res<GameSettings>,
-    mut remesh_chunk_ev: EventWriter<RemeshChunks>
+    mut remesh_chunk_ev: EventWriter<RemeshChunks>,
 ) {
     if game_settings_res.is_changed() {
         remesh_chunk_ev.send(RemeshChunks);
@@ -447,17 +460,28 @@ fn generate_chunk(chunk_pos: IVec2, world_preset: WorldGenPreset) -> ChunkGenera
         WorldGenPreset::DEFAULT => {
             for x in 0..CHUNK_WIDTH {
                 for y in (0..CHUNK_WIDTH).rev() {
-                    let global_pos = IVec2::new((chunk_pos.x * CHUNK_WIDTH as i32) + x as i32, (chunk_pos.y * CHUNK_WIDTH as i32) + y as i32);
+                    let global_pos = IVec2::new(
+                        (chunk_pos.x * CHUNK_WIDTH as i32) + x as i32,
+                        (chunk_pos.y * CHUNK_WIDTH as i32) + y as i32,
+                    );
                     //let s = (f32::sin(global_pos.x as f32 / CHUNK_WIDTH as f32) * CHUNK_WIDTH as f32).floor() as i32;
                     let noise = Fbm::<Perlin>::new(0);
-                    let s = (noise.get([global_pos.x as f64 / CHUNK_WIDTH as f64, global_pos.x as f64 / CHUNK_WIDTH as f64]) * CHUNK_WIDTH as f64).floor() as i32;
+                    let s = (noise.get([
+                        global_pos.x as f64 / CHUNK_WIDTH as f64,
+                        global_pos.x as f64 / CHUNK_WIDTH as f64,
+                    ]) * CHUNK_WIDTH as f64)
+                        .floor() as i32;
 
                     if global_pos.y == s {
-                        blocks[get_index_from_position(UVec2::new(x as u32, y as u32))] = BlockType::GRASS;           
-                        walls[get_index_from_position(UVec2::new(x as u32, y as u32))] = BlockType::GRASS;
+                        blocks[get_index_from_position(UVec2::new(x as u32, y as u32))] =
+                            BlockType::GRASS;
+                        walls[get_index_from_position(UVec2::new(x as u32, y as u32))] =
+                            BlockType::GRASS;
                     } else if global_pos.y < s {
-                        blocks[get_index_from_position(UVec2::new(x as u32, y as u32))] = BlockType::DIRT;           
-                        walls[get_index_from_position(UVec2::new(x as u32, y as u32))] = BlockType::DIRT;
+                        blocks[get_index_from_position(UVec2::new(x as u32, y as u32))] =
+                            BlockType::DIRT;
+                        walls[get_index_from_position(UVec2::new(x as u32, y as u32))] =
+                            BlockType::DIRT;
                     }
                 }
             }

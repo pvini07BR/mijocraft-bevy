@@ -168,7 +168,16 @@ pub fn get_neighboring_blocks_with_corners(
     if let Some(chunk) = chunks_res.get(&chunk_pos) {
         neighbors[0] = chunk.layers[layer as usize][get_index_from_position(relative_position)];
 
-        let directions = [IVec2::NEG_Y, IVec2::X, IVec2::Y, IVec2::NEG_X, IVec2::new(-1, -1), IVec2::new(1, -1), IVec2::new(1, 1), IVec2::new(-1, 1)];
+        let directions = [
+            IVec2::NEG_Y,
+            IVec2::X,
+            IVec2::Y,
+            IVec2::NEG_X,
+            IVec2::new(-1, -1),
+            IVec2::new(1, -1),
+            IVec2::new(1, 1),
+            IVec2::new(-1, 1),
+        ];
 
         for i in 0..directions.len() {
             let neighbor_pos = block_position + directions[i];
@@ -249,7 +258,16 @@ pub fn get_neighboring_lights_with_corners(
     if let Some(chunk) = chunks_res.get(&chunk_pos) {
         neighbors[0] = chunk.light[get_index_from_position(relative_position)];
 
-        let directions = [IVec2::NEG_Y, IVec2::X, IVec2::Y, IVec2::NEG_X, IVec2::new(-1, -1), IVec2::new(1, -1), IVec2::new(1, 1), IVec2::new(-1, 1)];
+        let directions = [
+            IVec2::NEG_Y,
+            IVec2::X,
+            IVec2::Y,
+            IVec2::NEG_X,
+            IVec2::new(-1, -1),
+            IVec2::new(1, -1),
+            IVec2::new(1, 1),
+            IVec2::new(-1, 1),
+        ];
 
         for i in 0..directions.len() {
             let neighbor_pos = block_position + directions[i];

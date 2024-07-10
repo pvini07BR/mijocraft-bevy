@@ -19,11 +19,16 @@ use bevy::{
 };
 use bevy_xpbd_2d::prelude::*;
 use enum_iterator::Sequence;
+use rand::{rngs::StdRng, Rng, SeedableRng};
 
 use crate::{
-    chunk_manager::Chunks, utils::{
-        get_global_position, get_index_from_position, get_neighboring_blocks, get_neighboring_blocks_with_corners, get_neighboring_lights, get_neighboring_lights_with_corners, get_position_from_index
-    }, GameSettings, GameState
+    chunk_manager::Chunks,
+    utils::{
+        get_global_position, get_index_from_position, get_neighboring_blocks,
+        get_neighboring_blocks_with_corners, get_neighboring_lights,
+        get_neighboring_lights_with_corners, get_position_from_index,
+    },
+    GameSettings, GameState,
 };
 
 #[derive(Clone, Copy, Debug, PartialEq)]
@@ -41,7 +46,10 @@ pub enum BlockType {
     GRASS,
     DIRT,
     STONE,
+    COBBLESTONE,
     PLANKS,
+    TREE_LOG,
+    LEAVES,
     GLASS,
     SIZE,
 }
@@ -51,6 +59,7 @@ impl BlockType {
         match self {
             BlockType::AIR => true,
             BlockType::GLASS => true,
+            BlockType::LEAVES => true,
             _ => false,
         }
     }
@@ -58,6 +67,24 @@ impl BlockType {
     fn is_passthrough(&self) -> bool {
         match self {
             BlockType::AIR => true,
+            _ => false,
+        }
+    }
+
+    fn can_flip_horizontally(&self) -> bool {
+        match self {
+            BlockType::GRASS => true,
+            BlockType::DIRT => true,
+            BlockType::STONE => true,
+            BlockType::LEAVES => true,
+            _ => false,
+        }
+    }
+
+    fn can_flip_vertically(&self) -> bool {
+        match self {
+            BlockType::DIRT => true,
+            BlockType::TREE_LOG => true,
             _ => false,
         }
     }
@@ -148,7 +175,7 @@ fn remesh(
     chunk_query: Query<(&Children, &ChunkComponent)>,
     chunk_layer_query: Query<&Mesh2dHandle, With<ChunkLayer>>,
     mut meshes: ResMut<Assets<Mesh>>,
-    settings_res: Res<GameSettings>
+    settings_res: Res<GameSettings>,
 ) {
     for _ in remesh_chunk_ev.read() {
         for (chunk_children, chunk_comp) in chunk_query.iter() {
@@ -195,10 +222,14 @@ fn remesh(
                     // ...and also smooth lighting.
                     let wall_darkness = settings_res.wall_darkness;
                     let light = chunk.light[i] as f32 / 15.0;
-    
+
                     let color = match li == PlaceMode::WALL as usize {
                         false => Color::srgb(light, light, light),
-                        true => Color::srgb(wall_darkness * light, wall_darkness * light, wall_darkness * light),
+                        true => Color::srgb(
+                            wall_darkness * light,
+                            wall_darkness * light,
+                            wall_darkness * light,
+                        ),
                     };
 
                     for vertex_color in vertex_colors[i * VERTICES_PER_BLOCK..].iter_mut().take(4) {
@@ -207,23 +238,33 @@ fn remesh(
 
                     if settings_res.smooth_lighting {
                         let global = get_global_position(chunk_comp.position, position);
-                        if let Some(neighbors) = get_neighboring_lights_with_corners(&chunks, global) {
+                        if let Some(neighbors) =
+                            get_neighboring_lights_with_corners(&chunks, global)
+                        {
                             let get_color = |f_light: f32| -> [f32; 4] {
                                 if li == PlaceMode::BLOCK as usize {
                                     return [f_light, f_light, f_light, 1.0];
                                 } else {
-                                    return [wall_darkness * f_light, wall_darkness * f_light, wall_darkness * f_light, 1.0];
+                                    return [
+                                        wall_darkness * f_light,
+                                        wall_darkness * f_light,
+                                        wall_darkness * f_light,
+                                        1.0,
+                                    ];
                                 }
                             };
 
-                            let normalize_light = |light: u8| { return light as f32 / 15.0; };
+                            let normalize_light = |light: u8| {
+                                return light as f32 / 15.0;
+                            };
 
                             // Bottom Left vertex
                             let average = (
                                 normalize_light(neighbors[0]) + // Center
                                 normalize_light(neighbors[4]) + // Left
                                 normalize_light(neighbors[5]) + // Bottom Left
-                                normalize_light(neighbors[1])   // Down
+                                normalize_light(neighbors[1])
+                                // Down
                             ) / 4.0;
                             vertex_colors[i * VERTICES_PER_BLOCK + 0] = get_color(average);
 
@@ -232,7 +273,8 @@ fn remesh(
                                 normalize_light(neighbors[0]) + // Center
                                 normalize_light(neighbors[2]) + // Right
                                 normalize_light(neighbors[6]) + // Bottom Right
-                                normalize_light(neighbors[1])   // Down
+                                normalize_light(neighbors[1])
+                                // Down
                             ) / 4.0;
                             vertex_colors[i * VERTICES_PER_BLOCK + 1] = get_color(average);
 
@@ -241,7 +283,8 @@ fn remesh(
                                 normalize_light(neighbors[0]) + // Center
                                 normalize_light(neighbors[2]) + // Right
                                 normalize_light(neighbors[7]) + // Top Right
-                                normalize_light(neighbors[3])   // Up
+                                normalize_light(neighbors[3])
+                                // Up
                             ) / 4.0;
                             vertex_colors[i * VERTICES_PER_BLOCK + 2] = get_color(average);
 
@@ -250,7 +293,8 @@ fn remesh(
                                 normalize_light(neighbors[0]) + // Center
                                 normalize_light(neighbors[4]) + // Left
                                 normalize_light(neighbors[8]) + // Top Left
-                                normalize_light(neighbors[3])   // Up
+                                normalize_light(neighbors[3])
+                                // Up
                             ) / 4.0;
                             vertex_colors[i * VERTICES_PER_BLOCK + 3] = get_color(average);
                         }
@@ -259,7 +303,9 @@ fn remesh(
                     // Wall Ambient Occlusion
                     if settings_res.wall_ambient_occlusion && li == PlaceMode::WALL as usize {
                         let global = get_global_position(chunk_comp.position, position);
-                        if let Some(neighbors) = get_neighboring_blocks_with_corners(&chunks, global, PlaceMode::BLOCK) {
+                        if let Some(neighbors) =
+                            get_neighboring_blocks_with_corners(&chunks, global, PlaceMode::BLOCK)
+                        {
                             let ao_color: [f32; 4] = [0.1 * light, 0.1 * light, 0.1 * light, 1.0];
 
                             // Down
@@ -310,7 +356,7 @@ fn remesh(
                             if !neighbors[8].is_transparent() {
                                 vertex_colors[i * VERTICES_PER_BLOCK + 3] = ao_color;
                             }
-                        }                        
+                        }
                     }
 
                     // Set block UVs
@@ -320,10 +366,35 @@ fn remesh(
                     };
 
                     let uvs = &mut vertex_uvs[i * VERTICES_PER_BLOCK..];
+
+                    let global = (chunk_comp.position * CHUNK_WIDTH as i32) + position.as_ivec2();
+
                     uvs[0] = [u(-1), 1.0];
                     uvs[1] = [u(0), 1.0];
                     uvs[2] = [u(0), 0.0];
                     uvs[3] = [u(-1), 0.0];
+
+                    if chunk.layers[li][i].can_flip_horizontally() {
+                        if StdRng::seed_from_u64(u32::from_le_bytes(global.x.to_le_bytes()) as u64)
+                            .gen::<bool>()
+                        {
+                            uvs[0][0] = u(0);
+                            uvs[1][0] = u(-1);
+                            uvs[2][0] = u(-1);
+                            uvs[3][0] = u(0);
+                        }
+                    }
+
+                    if chunk.layers[li][i].can_flip_vertically() {
+                        if StdRng::seed_from_u64(u32::from_le_bytes(global.y.to_le_bytes()) as u64)
+                            .gen::<bool>()
+                        {
+                            uvs[0][1] = 0.0;
+                            uvs[1][1] = 0.0;
+                            uvs[2][1] = 1.0;
+                            uvs[3][1] = 1.0;
+                        }
+                    }
                 }
 
                 mesh.insert_attribute(Mesh::ATTRIBUTE_POSITION, vertex_positions);
@@ -342,56 +413,60 @@ fn regenerate_collision(
     chunk_query: Query<(&Children, &ChunkComponent)>,
     collider_query: Query<&Transform, With<Collider>>,
 ) {
-    let tile_size = TILE_SIZE as f32;
     for ev in recol_chunk_ev.read() {
-        let (children, chunk) = {
-            let Ok((children, chunk_compo)) = chunk_query.get(ev.entity) else {
-                continue;
-            };
-            let Some(chunk) = chunks.get(&chunk_compo.position) else {
-                continue;
-            };
-            (children, chunk)
+        let Ok((children, chunk_compo)) = chunk_query.get(ev.entity) else {
+            continue;
         };
-
-        let get_index = |collider: &Transform| {
-            let pos = (collider.translation.xy() / tile_size) - 0.5;
-            get_index_from_position(pos.as_uvec2())
+        let Some(chunk) = chunks.get(&chunk_compo.position) else {
+            continue;
         };
-        let collides =
-            |index: usize| chunk.layers[PlaceMode::BLOCK as usize][index] > BlockType::AIR;
 
         // First check if there are colliders for blocks that don't exist anymore
-        for child in children.iter() {
-            let Ok(collider) = collider_query.get(*child) else {
-                continue;
-            };
-            if !collides(get_index(collider)) {
-                commands.entity(*child).despawn_recursive();
+        for c in children.iter() {
+            if let Ok(collider_transform) = collider_query.get(*c) {
+                let pos = (collider_transform.translation.xy() / TILE_SIZE as f32) - 0.5;
+                let index = get_index_from_position(UVec2::new(pos.x as u32, pos.y as u32));
+                if chunk.layers[PlaceMode::BLOCK as usize][index] <= BlockType::AIR {
+                    commands.entity(*c).despawn_recursive();
+                }
             }
         }
 
-        let has_collider = |index: usize| {
-            children
-                .iter()
-                .filter_map(|child| collider_query.get(*child).ok())
-                .any(|collider| get_index(collider) == index)
-        };
+        // Now check if there are blocks that does not have a collider yet
+        for i in 0..CHUNK_AREA {
+            if !chunk.layers[PlaceMode::BLOCK as usize][i].is_passthrough() {
+                let mut has_collider: bool = false;
+                for c in children.iter() {
+                    if let Ok(collider_transform) = collider_query.get(*c) {
+                        let pos = (collider_transform.translation.xy() / TILE_SIZE as f32) - 0.5;
+                        let index = get_index_from_position(UVec2::new(pos.x as u32, pos.y as u32));
+                        if i == index {
+                            has_collider = true;
+                            break;
+                        }
+                    }
+                }
 
-        // Now check if there are blocks that do not have a collider yet
-        for i in (0..CHUNK_AREA)
-            .filter(|&i| collides(i))
-            .filter(|&i| !has_collider(i))
-        {
-            let pos = get_position_from_index(i).as_vec2();
-            let translation = Vec2::splat(tile_size) * 0.5 + pos * tile_size;
-            let transform = Transform::from_translation(translation.extend(0.0));
-            let bundle = (
-                Name::new(format!("Block Collider at ({}, {})", pos.x, pos.y)),
-                Collider::rectangle(tile_size, tile_size),
-                TransformBundle::from_transform(transform),
-            );
-            commands.spawn(bundle).set_parent(ev.entity);
+                if !has_collider {
+                    let pos = get_position_from_index(i);
+                    let pixel_pos = Vec2::new(
+                        pos.x as f32 * TILE_SIZE as f32,
+                        pos.y as f32 * TILE_SIZE as f32,
+                    );
+
+                    commands
+                        .spawn((
+                            Name::new(format!("Block Collider at ({}, {})", pos.x, pos.y)),
+                            Collider::rectangle(TILE_SIZE as f32, TILE_SIZE as f32),
+                            TransformBundle::from_transform(Transform::from_xyz(
+                                (TILE_SIZE as f32 / 2.0) + pixel_pos.x,
+                                (TILE_SIZE as f32 / 2.0) + pixel_pos.y,
+                                0.0,
+                            )),
+                        ))
+                        .set_parent(ev.entity);
+                }
+            }
         }
     }
 }

@@ -61,15 +61,24 @@ fn main() {
         .add_sub_state::<GamePauseState>()
         .add_systems(
             Startup,
-            (read_settings, setup_theme, setup_worlds_folder, spawn_camera).chain(),
+            (
+                read_settings,
+                setup_theme,
+                setup_worlds_folder,
+                spawn_camera,
+            )
+                .chain(),
         )
-        .add_systems(Update, (on_game_settings_changed, on_player_settings_changed))
+        .add_systems(
+            Update,
+            (on_game_settings_changed, on_player_settings_changed),
+        )
         .run();
 }
 
 fn read_settings(
     mut game_settings: ResMut<GameSettings>,
-    mut player_settings: ResMut<PlayerSettings>
+    mut player_settings: ResMut<PlayerSettings>,
 ) {
     if let Ok(string) = fs::read_to_string("./game_settings.toml") {
         if let Ok(settings) = toml::from_str::<GameSettings>(&string) {
@@ -84,32 +93,28 @@ fn read_settings(
     }
 }
 
-fn on_game_settings_changed(
-    settings: Res<GameSettings>
-) {
+fn on_game_settings_changed(settings: Res<GameSettings>) {
     if settings.is_changed() {
         match toml::to_string(&*settings) {
             Ok(string) => {
                 if let Err(e) = fs::write("./game_settings.toml", string) {
                     error!("Failed to save game settings to file: {}", e);
                 }
-            },
-            Err(e) => error!("Failed to make game settings a string: {}", e)
+            }
+            Err(e) => error!("Failed to make game settings a string: {}", e),
         }
     }
 }
 
-fn on_player_settings_changed(
-    player_set: Res<PlayerSettings>
-) {
+fn on_player_settings_changed(player_set: Res<PlayerSettings>) {
     if player_set.is_changed() {
         match toml::to_string(&*player_set) {
             Ok(string) => {
                 if let Err(e) = fs::write("./player_settings.toml", string) {
                     error!("Failed to save player settings to file: {}", e);
                 }
-            },
-            Err(e) => error!("Failed to make player settings a string: {}", e)
+            }
+            Err(e) => error!("Failed to make player settings a string: {}", e),
         }
     }
 }

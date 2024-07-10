@@ -172,7 +172,6 @@ fn set_player_pos_event(
 ) {
     for ev in set_player_pos_ev.read() {
         if let Ok(mut player_transform) = player_query.get_single_mut() {
-            println!("{:?}", ev);
             player_transform.translation.x = ev.x * TILE_SIZE as f32;
             player_transform.translation.y = ev.y * TILE_SIZE as f32;
         }
@@ -270,8 +269,12 @@ fn player_input(
     keyboard_input: Res<ButtonInput<KeyCode>>,
 ) {
     if let Ok((mut player_linear_velocity, mut player)) = player_query.get_single_mut() {
-        let speed: f32 = TILE_SIZE as f32 * 10.0;
+        let mut speed: f32 = TILE_SIZE as f32 * 10.0;
         let jump_force = 16.0 * TILE_SIZE as f32;
+
+        if keyboard_input.pressed(KeyCode::ShiftLeft) {
+            speed *= 2.0;
+        }
 
         if keyboard_input.just_pressed(KeyCode::KeyF) {
             player.noclip = !player.noclip;

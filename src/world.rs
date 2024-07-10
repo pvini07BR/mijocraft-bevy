@@ -1,10 +1,12 @@
-use crate::chunk::{self, BlockType, PlaceMode, CHUNK_WIDTH, TILE_SIZE};
+use crate::chunk::{self, BlockType, PlaceMode, CHUNK_AREA, CHUNK_WIDTH, TILE_SIZE};
 use crate::chunk_manager::{ChunkManagerPlugin, FinishedSavingChunks, TryPlaceBlock, UnloadChunks};
 
 use crate::pause_menu::{InPauseState, PauseMenuPlugin};
 use crate::player::{Player, PlayerPlugin};
 
 use crate::{utils::*, GamePauseState, GameState, MainCamera};
+use bevy::render::render_asset::RenderAssetUsages;
+use bevy::sprite::MaterialMesh2dBundle;
 use bevy::{input::mouse::MouseWheel, prelude::*, sprite::SpriteBundle, window::PrimaryWindow};
 use bevy_xpbd_2d::{prelude::*, SubstepSchedule, SubstepSet};
 use serde::{Deserialize, Serialize};
@@ -42,6 +44,9 @@ struct CursorBlockIcon;
 struct CursorPlaceModeIcon;
 
 #[derive(Component)]
+struct SkyBackground;
+
+#[derive(Component)]
 pub struct FromWorld;
 
 pub struct WorldPlugin;
@@ -59,20 +64,14 @@ impl Plugin for WorldPlugin {
         .add_plugins((ChunkManagerPlugin, PlayerPlugin, PauseMenuPlugin))
         .add_systems(
             OnEnter(GameState::Game),
-            (config_camera, setup)
+            (config_camera, setup, setup_sky_bg)
                 .chain()
                 .run_if(in_state(GameState::Game)),
         )
         .add_systems(
             Update,
             (
-                (
-                    update_cursor,
-                    block_input,
-                    switch_place_mode,
-                    mouse_scroll_input,
-                    force_reload_chunks,
-                )
+                (switch_place_mode, mouse_scroll_input, force_reload_chunks)
                     .run_if(in_state(GamePauseState::Running)),
                 // The pause input system will be ran in both running and paused states
                 pause_input,
@@ -82,7 +81,13 @@ impl Plugin for WorldPlugin {
         )
         .add_systems(
             SubstepSchedule,
-            camera_follow_player
+            (
+                camera_follow_player,
+                update_sky_bg,
+                update_cursor,
+                block_input,
+            )
+                .chain()
                 .in_set(SubstepSet::ApplyTranslation)
                 .run_if(in_state(GameState::Game))
                 .run_if(in_state(GamePauseState::Running)),
@@ -98,7 +103,7 @@ fn config_camera(
     world_info: Res<WorldInfo>,
 ) {
     let (mut camera, mut camera_transform) = camera_q.single_mut();
-    camera.clear_color = ClearColorConfig::Custom(Color::srgb(0.48, 0.48, 0.67));
+    camera.clear_color = ClearColorConfig::Custom(Color::BLACK);
 
     if let Some(pos) = world_info.player_position {
         camera_transform.translation.x = pos.x as f32 * TILE_SIZE as f32;
@@ -187,6 +192,69 @@ fn setup(
                 CursorPlaceModeIcon,
             ));
         });
+}
+
+fn setup_sky_bg(
+    mut commands: Commands,
+    mut meshes: ResMut<Assets<Mesh>>,
+    mut materials: ResMut<Assets<ColorMaterial>>,
+) {
+    // clear color: 0.48, 0.48, 0.67
+
+    let mesh = Mesh::new(
+        bevy::render::mesh::PrimitiveTopology::TriangleList,
+        RenderAssetUsages::default(),
+    )
+    .with_inserted_attribute(
+        Mesh::ATTRIBUTE_POSITION,
+        vec![
+            [-0.5, -1.0, 0.0],  // 0
+            [0.5, -1.0, 0.0],   // 1
+            [0.5, 0.0, 0.0],    // 2
+            [-0.5, 0.0, 0.0],   // 3
+            [0.5, 0.025, 0.0],  // 4
+            [-0.5, 0.025, 0.0], // 5
+            [0.5, 1.0, 0.0],    // 6
+            [-0.5, 1.0, 0.0],   // 7
+            [0.5, 2.0, 0.0],    // 8
+            [-0.5, 2.0, 0.0],   // 9
+            [0.5, 3.0, 0.0],    // 10
+            [-0.5, 3.0, 0.0],   // 11
+        ],
+    )
+    .with_inserted_attribute(
+        Mesh::ATTRIBUTE_COLOR,
+        vec![
+            [0.0, 0.0, 0.0, 1.0],
+            [0.0, 0.0, 0.0, 1.0],
+            [1.0, 1.0, 1.0, 1.0],
+            [1.0, 1.0, 1.0, 1.0],
+            [0.48, 0.48, 0.67, 1.0],
+            [0.48, 0.48, 0.67, 1.0],
+            [0.125, 0.125, 1.0, 1.0],
+            [0.125, 0.125, 1.0, 1.0],
+            [0.0, 0.0, 0.5, 1.0],
+            [0.0, 0.0, 0.5, 1.0],
+            [0.0, 0.0, 0.0, 1.0],
+            [0.0, 0.0, 0.0, 1.0],
+        ],
+    )
+    .with_inserted_indices(bevy::render::mesh::Indices::U32(vec![
+        0, 1, 2, 2, 3, 0, 3, 2, 4, 4, 5, 3, 5, 4, 6, 6, 7, 5, 7, 6, 8, 8, 9, 7, 9, 8, 10, 10, 11, 9,
+    ]));
+
+    commands.spawn((
+        Name::new("Sky Background"),
+        MaterialMesh2dBundle {
+            mesh: meshes.add(mesh).into(),
+            material: materials.add(ColorMaterial::from_color(Srgba::new(0.7, 0.7, 1.0, 1.0))),
+            //material: materials.add(ColorMaterial::default()),
+            transform: Transform::from_xyz(0.0, 0.0, -2.0),
+            ..default()
+        },
+        SkyBackground,
+        FromWorld,
+    ));
 }
 
 fn destroy_game(
@@ -290,17 +358,19 @@ fn block_input(
     if player_position != cursor.block_position || cursor.layer == PlaceMode::WALL {
         if mouse_button_input.just_pressed(MouseButton::Right) {
             try_place_block_ev.send(TryPlaceBlock {
+                position: cursor.relative_position,
+                chunk_position: cursor.chunk_position,
                 layer: cursor.layer,
-                position: cursor.block_position,
-                id: cursor.block_type,
+                block_type: cursor.block_type,
             });
         }
     }
     if mouse_button_input.just_pressed(MouseButton::Left) {
         try_place_block_ev.send(TryPlaceBlock {
+            position: cursor.relative_position,
+            chunk_position: cursor.chunk_position,
             layer: cursor.layer,
-            position: cursor.block_position,
-            id: BlockType::AIR,
+            block_type: BlockType::AIR,
         });
     }
 }
@@ -323,6 +393,31 @@ fn camera_follow_player(
             );
         }
     }
+}
+
+fn update_sky_bg(
+    window_query: Query<&Window, With<PrimaryWindow>>,
+    mut sky_q: Query<&mut Transform, With<SkyBackground>>,
+    camera_q: Query<&Transform, (With<MainCamera>, Without<SkyBackground>)>,
+) {
+    let Ok(window) = window_query.get_single() else {
+        return;
+    };
+    let Ok(mut sky_transform) = sky_q.get_single_mut() else {
+        return;
+    };
+    let Ok(camera_transform) = camera_q.get_single() else {
+        return;
+    };
+
+    sky_transform.scale = Vec3::new(
+        window.width() * camera_transform.scale.x,
+        (CHUNK_AREA * TILE_SIZE) as f32,
+        0.0,
+    );
+
+    sky_transform.translation.x = camera_transform.translation.x;
+    //sky_transform.translation.y = camera_transform.translation.y - 200.0;
 }
 
 fn mouse_scroll_input(
@@ -444,12 +539,9 @@ fn update_cursor(
             ) * TILE_SIZE as f32;
             cursor_transform.translation = Vec3::new(g.x, g.y, cursor_transform.translation.z);
 
-            cursor.chunk_position = IVec2::new(
-                (cursor.block_position.x as f32 * CHUNK_WIDTH as f32).floor() as i32,
-                (cursor.block_position.y as f32 * CHUNK_WIDTH as f32).floor() as i32,
-            );
-            let v = (cursor.chunk_position * CHUNK_WIDTH as i32) - cursor.block_position;
-            cursor.relative_position = UVec2::new(v.x as u32, v.y as u32);
+            cursor.chunk_position = get_chunk_position(cursor.block_position);
+            cursor.relative_position =
+                get_relative_position(cursor.block_position, cursor.chunk_position);
         } else {
             *cursor_visibility = Visibility::Hidden;
             *cursor_icon_visibility = Visibility::Hidden;
