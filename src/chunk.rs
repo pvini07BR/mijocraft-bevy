@@ -24,8 +24,9 @@ use rand::{rngs::StdRng, Rng, SeedableRng};
 use crate::{
     chunk_manager::Chunks,
     utils::{
-        get_global_position, get_index_from_position, get_neighboring_blocks_with_corners,
-        get_neighboring_lights, get_neighboring_lights_with_corners, get_position_from_index,
+        greedy-meshing
+        get_global_position, get_neighboring_blocks_with_corners, get_neighboring_lights,
+        get_neighboring_lights_with_corners, get_position_from_index,
     },
     GameSettings, GameState,
 };
@@ -407,6 +408,141 @@ fn remesh(
     }
 }
 
+mod collision {
+    use crate::chunk::{BlockType, CHUNK_AREA, CHUNK_WIDTH, TILE_SIZE};
+    use bevy::prelude::{Name, Transform, TransformBundle, UVec2};
+    use bevy_xpbd_2d::prelude::Collider;
+
+    type BlockPosition = UVec2;
+    type ColliderSpawnDetails = (Name, Collider, TransformBundle);
+
+    /* Rectangle of blocks defined by two vertices.
+     * For equivalent components, start <= end is assumed. */
+    #[derive(Clone, Copy)]
+    pub struct Rectangle {
+        pub start: BlockPosition,
+        pub end: BlockPosition,
+    }
+    impl Rectangle {
+        fn new(start: BlockPosition, end: BlockPosition) -> Self {
+            Self { start, end }
+        }
+        pub fn as_collider_spawn(&self) -> ColliderSpawnDetails {
+            let size_blocks = self.end - self.start + 1;
+            let size_px = size_blocks * TILE_SIZE as u32;
+
+            let start_pxpos = self.start * TILE_SIZE as u32;
+            let center_pxpos = size_px / 2 + start_pxpos;
+
+            let transform = Transform::from_translation(center_pxpos.extend(0).as_vec3());
+            let name = format!("Block Collider between {}..{}", self.start, self.end);
+            let size_px = size_px.as_vec2();
+            (
+                Name::new(name),
+                Collider::rectangle(size_px.x, size_px.y),
+                TransformBundle::from_transform(transform),
+            )
+        }
+    }
+
+    type Chunk = [BlockType; CHUNK_AREA];
+    type Meshes = Vec<Rectangle>;
+
+    fn block_index(block: BlockPosition) -> usize {
+        block.y as usize * CHUNK_WIDTH + block.x as usize
+    }
+    fn collides(block: BlockType) -> bool {
+        !block.is_passthrough()
+    }
+    fn block_at_collides(block: BlockPosition, chunk: &Chunk) -> bool {
+        collides(chunk[block_index(block)])
+    }
+    struct Column {
+        x: u32,
+        y_min: u32,
+        y_max: u32,
+    }
+    fn all_in_column_collide(chunk: &Chunk, column: Column) -> bool {
+        assert!(column.y_min <= column.y_max);
+        (column.y_min..=column.y_max)
+            .into_iter()
+            .map(|y| UVec2::new(column.x, y))
+            .all(|block| block_at_collides(block, chunk))
+    }
+    fn is_between_numbers(a: u32, b: u32, n: u32) -> bool {
+        (a <= n && n <= b) || (a >= n && n >= b)
+    }
+    fn is_inside_rectangle(rectangle: Rectangle, point: BlockPosition) -> bool {
+        is_between_numbers(rectangle.start.x, rectangle.end.x, point.x)
+            && is_between_numbers(rectangle.start.y, rectangle.end.y, point.y)
+    }
+    fn rectangles_intersect(a: Rectangle, b: Rectangle) -> bool {
+        is_inside_rectangle(a, b.start) || is_inside_rectangle(a, b.end)
+    }
+    fn is_any_of_area_meshed(area: Rectangle, meshes: &Meshes) -> bool {
+        meshes.iter().any(|&mesh| rectangles_intersect(mesh, area))
+    }
+    fn is_meshed(block: BlockPosition, meshes: &Meshes) -> bool {
+        meshes.iter().any(|&mesh| is_inside_rectangle(mesh, block))
+    }
+    fn is_in_chunk_bounds(position: BlockPosition) -> bool {
+        position.x < CHUNK_WIDTH as u32 && position.y < CHUNK_WIDTH as u32
+    }
+    fn mesh_expand_right(mesh: Rectangle, chunk: &Chunk, meshes: &Meshes) -> Rectangle {
+        let maybe_next_end = mesh.end + UVec2::new(1, 0);
+        let addition = Rectangle {
+            start: UVec2::new(maybe_next_end.x, mesh.start.y),
+            end: maybe_next_end,
+        };
+        let column = Column {
+            x: maybe_next_end.x,
+            y_min: mesh.start.y,
+            y_max: mesh.end.y,
+        };
+        let addition_is_valid = is_in_chunk_bounds(maybe_next_end)
+            && !is_any_of_area_meshed(addition, meshes)
+            && all_in_column_collide(chunk, column);
+        match addition_is_valid {
+            true => mesh_expand_right(Rectangle::new(mesh.start, maybe_next_end), chunk, meshes),
+            false => mesh,
+        }
+    }
+    fn mesh_expand_up_and_right(mesh: Rectangle, chunk: &Chunk, meshes: &Meshes) -> Rectangle {
+        let maybe_next_end = mesh.end + UVec2::new(0, 1);
+        let addition_is_valid = is_in_chunk_bounds(maybe_next_end)
+            && !is_meshed(maybe_next_end, meshes)
+            && block_at_collides(maybe_next_end, chunk);
+        match addition_is_valid {
+            true => {
+                mesh_expand_up_and_right(Rectangle::new(mesh.start, maybe_next_end), chunk, meshes)
+            }
+            false => mesh_expand_right(mesh, chunk, meshes),
+        }
+    }
+    /* Expand out from start following greedy meshing */
+    fn mesh(start: BlockPosition, chunk: &Chunk, meshes: &Meshes) -> Rectangle {
+        mesh_expand_up_and_right(Rectangle { start, end: start }, chunk, meshes)
+    }
+    fn block_position(index_in_chunk: usize) -> BlockPosition {
+        crate::utils::get_position_from_index(index_in_chunk)
+    }
+    fn maybe_add_mesh_from(start: BlockPosition, chunk: &Chunk, meshes: &mut Meshes) {
+        if !is_meshed(start, &meshes) {
+            meshes.push(mesh(start, chunk, &meshes));
+        }
+    }
+    pub fn mesh_chunk(chunk: Chunk) -> Meshes {
+        let mut meshes = Vec::<Rectangle>::new();
+        chunk
+            .into_iter()
+            .enumerate()
+            .filter(|&(_, btype)| collides(btype))
+            .map(|(i, _)| block_position(i))
+            .for_each(|bpos| maybe_add_mesh_from(bpos, &chunk, &mut meshes));
+        meshes
+    }
+}
+
 fn regenerate_collision(
     mut commands: Commands,
     chunks: Res<Chunks>,
@@ -422,53 +558,18 @@ fn regenerate_collision(
             continue;
         };
 
-        // First check if there are colliders for blocks that don't exist anymore
-        for c in children.iter() {
-            if let Ok(collider_transform) = collider_query.get(*c) {
-                let pos = (collider_transform.translation.xy() / TILE_SIZE as f32) - 0.5;
-                let index = get_index_from_position(UVec2::new(pos.x as u32, pos.y as u32));
-                if chunk.layers[PlaceMode::BLOCK as usize][index] <= BlockType::AIR {
-                    commands.entity(*c).despawn_recursive();
-                }
-            }
-        }
+        children
+            .iter()
+            .filter(|&c| collider_query.get(*c).is_ok())
+            .for_each(|&c| commands.entity(c).despawn_recursive());
 
-        // Now check if there are blocks that does not have a collider yet
-        for i in 0..CHUNK_AREA {
-            if !chunk.layers[PlaceMode::BLOCK as usize][i].is_passthrough() {
-                let mut has_collider: bool = false;
-                for c in children.iter() {
-                    if let Ok(collider_transform) = collider_query.get(*c) {
-                        let pos = (collider_transform.translation.xy() / TILE_SIZE as f32) - 0.5;
-                        let index = get_index_from_position(UVec2::new(pos.x as u32, pos.y as u32));
-                        if i == index {
-                            has_collider = true;
-                            break;
-                        }
-                    }
-                }
-
-                if !has_collider {
-                    let pos = get_position_from_index(i);
-                    let pixel_pos = Vec2::new(
-                        pos.x as f32 * TILE_SIZE as f32,
-                        pos.y as f32 * TILE_SIZE as f32,
-                    );
-
-                    commands
-                        .spawn((
-                            Name::new(format!("Block Collider at ({}, {})", pos.x, pos.y)),
-                            Collider::rectangle(TILE_SIZE as f32, TILE_SIZE as f32),
-                            TransformBundle::from_transform(Transform::from_xyz(
-                                (TILE_SIZE as f32 / 2.0) + pixel_pos.x,
-                                (TILE_SIZE as f32 / 2.0) + pixel_pos.y,
-                                0.0,
-                            )),
-                        ))
-                        .set_parent(ev.entity);
-                }
-            }
-        }
+        collision::mesh_chunk(chunk.layers[PlaceMode::BLOCK as usize])
+            .into_iter()
+            .for_each(|mesh| {
+                commands
+                    .spawn(mesh.as_collider_spawn())
+                    .set_parent(ev.entity);
+            });
     }
 }
 
