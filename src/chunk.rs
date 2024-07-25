@@ -24,7 +24,6 @@ use rand::{rngs::StdRng, Rng, SeedableRng};
 use crate::{
     chunk_manager::Chunks,
     utils::{
-        greedy-meshing
         get_global_position, get_neighboring_blocks_with_corners, get_neighboring_lights,
         get_neighboring_lights_with_corners, get_position_from_index,
     },
