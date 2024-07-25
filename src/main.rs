@@ -1,5 +1,6 @@
 mod chunk;
 mod chunk_manager;
+mod item_container;
 mod menu;
 mod pause_menu;
 mod player;

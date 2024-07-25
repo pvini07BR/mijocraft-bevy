@@ -24,9 +24,8 @@ use rand::{rngs::StdRng, Rng, SeedableRng};
 use crate::{
     chunk_manager::Chunks,
     utils::{
-        get_global_position, get_index_from_position, get_neighboring_blocks,
-        get_neighboring_blocks_with_corners, get_neighboring_lights,
-        get_neighboring_lights_with_corners, get_position_from_index,
+        get_global_position, get_index_from_position, get_neighboring_blocks_with_corners,
+        get_neighboring_lights, get_neighboring_lights_with_corners, get_position_from_index,
     },
     GameSettings, GameState,
 };
@@ -312,7 +311,6 @@ fn remesh(
                             if !neighbors[1].is_transparent() {
                                 vertex_colors[i * VERTICES_PER_BLOCK + 0] = ao_color;
                                 vertex_colors[i * VERTICES_PER_BLOCK + 1] = ao_color;
-                                //flip_quad(i, &mut indices);
                             }
 
                             // Right
@@ -339,7 +337,7 @@ fn remesh(
                             // Bottom Left
                             if !neighbors[5].is_transparent() {
                                 vertex_colors[i * VERTICES_PER_BLOCK + 0] = ao_color;
-                               flip_quad(i, &mut indices);
+                                flip_quad(i, &mut indices);
                             }
 
                             // Bottom Right

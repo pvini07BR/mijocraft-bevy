@@ -3,11 +3,13 @@ use bevy::{
     prelude::*,
     render::primitives::Aabb,
     sprite::{Anchor, MaterialMesh2dBundle},
-    tasks::{block_on, futures_lite::future, AsyncComputeTaskPool, IoTaskPool, Task},
+    tasks::{AsyncComputeTaskPool, IoTaskPool, Task},
     utils::HashMap,
     window::PrimaryWindow,
 };
+use bevy_ecs::world::Command;
 use bevy_xpbd_2d::prelude::*;
+use futures_util::FutureExt;
 use noise::{Fbm, NoiseFn, Perlin};
 use std::io::ErrorKind;
 
@@ -16,6 +18,7 @@ use crate::{
         generate_chunk_layer_mesh, BlockType, CalcLightChunks, Chunk, ChunkComponent, ChunkLayer,
         ChunkPlugin, PlaceMode, RecollisionChunk, RemeshChunks, CHUNK_AREA, CHUNK_WIDTH, TILE_SIZE,
     },
+    item_container::ItemContainer,
     utils::*,
     world::{WorldGenPreset, WorldInfo},
     GameSettings, MainCamera,
@@ -46,6 +49,28 @@ pub struct FinishedSavingChunks;
 
 #[derive(Component)]
 struct ComputeChunkLoading(Task<Result<SpawnChunk, String>>);
+
+struct FinishChunkLoadingTask(Entity);
+
+impl Command for FinishChunkLoadingTask {
+    fn apply(self, world: &mut World) {
+        let task = world
+            .entity_mut(self.0)
+            .take::<ComputeChunkLoading>()
+            .expect(&format!("{:?} does not exist", self.0));
+        if let Some(result) = task.0.now_or_never() {
+            match result {
+                Ok(spawn_chunk) => {
+                    world.send_event(spawn_chunk);
+                }
+                Err(_) => {}
+            }
+            if let Some(entity) = world.get_entity_mut(self.0) {
+                entity.despawn();
+            }
+        }
+    }
+}
 
 #[derive(Event, Debug)]
 pub struct SpawnChunk {
@@ -359,6 +384,7 @@ fn load_chunks(
         let Ok(window) = window_query.get_single() else {
             continue;
         };
+
         let (camera, camera_global_transform) = camera_query.get_single().unwrap();
 
         let worldpos = |viewpos: Vec2| {
@@ -431,7 +457,7 @@ async fn chunk_generator_task(
             // If a chunk file is not found at a certain location,
             // then it will try to generate a new one from scratch.
             // This is where world generation goes in!
-            ErrorKind::NotFound => generate_chunk(chunk_pos, world_preset),
+            ErrorKind::NotFound => generate_chunk(chunk_pos, world_preset).await,
             _ => {
                 error!("Error when trying to load chunk at {}: {}", chunk_pos, e);
                 return Err(format!("{}", e));
@@ -454,7 +480,7 @@ struct ChunkGenerationResult {
 }
 
 // World generation
-fn generate_chunk(chunk_pos: IVec2, world_preset: WorldGenPreset) -> ChunkGenerationResult {
+async fn generate_chunk(chunk_pos: IVec2, world_preset: WorldGenPreset) -> ChunkGenerationResult {
     let mut blocks: [BlockType; CHUNK_AREA] = [BlockType::AIR; CHUNK_AREA];
     let mut walls: [BlockType; CHUNK_AREA] = [BlockType::AIR; CHUNK_AREA];
     match world_preset {
@@ -526,18 +552,11 @@ fn generate_chunk(chunk_pos: IVec2, world_preset: WorldGenPreset) -> ChunkGenera
 
 fn process_chunk_loading_tasks(
     mut commands: Commands,
-    mut tasks_query: Query<(Entity, &mut ComputeChunkLoading)>,
-    mut spawn_chunk_ev: EventWriter<SpawnChunk>,
+    tasks_query: Query<(Entity, &ComputeChunkLoading)>,
 ) {
-    for (entity, mut task) in tasks_query.iter_mut() {
-        if let Some(result) = block_on(future::poll_once(&mut task.0)) {
-            match result {
-                Ok(spawn_chunk) => {
-                    spawn_chunk_ev.send(spawn_chunk);
-                }
-                Err(_) => {}
-            }
-            commands.entity(entity).despawn_recursive();
+    for (entity, task) in tasks_query.iter() {
+        if task.0.is_finished() {
+            commands.add(FinishChunkLoadingTask(entity));
         }
     }
 }

@@ -1,15 +1,19 @@
 use crate::chunk::{self, BlockType, PlaceMode, CHUNK_AREA, CHUNK_WIDTH, TILE_SIZE};
 use crate::chunk_manager::{ChunkManagerPlugin, FinishedSavingChunks, TryPlaceBlock, UnloadChunks};
 
+use crate::item_container::{Item, ItemContainer, ItemStack};
 use crate::pause_menu::{InPauseState, PauseMenuPlugin};
 use crate::player::{Player, PlayerPlugin};
 
+use crate::widgets::inventory::{InventoryWidgetExt, InventoryWidgetPlugin};
 use crate::{utils::*, GamePauseState, GameState, MainCamera};
 use bevy::render::render_asset::RenderAssetUsages;
 use bevy::sprite::MaterialMesh2dBundle;
 use bevy::{input::mouse::MouseWheel, prelude::*, sprite::SpriteBundle, window::PrimaryWindow};
 use bevy_xpbd_2d::{prelude::*, SubstepSchedule, SubstepSet};
 use serde::{Deserialize, Serialize};
+use sickle_ui::prelude::{UiContainerExt, UiRowExt};
+use sickle_ui::ui_builder::{UiBuilderExt, UiRoot};
 
 #[derive(Clone, Copy, Debug, PartialEq, Reflect, Default, Serialize, Deserialize)]
 pub enum WorldGenPreset {
@@ -26,8 +30,11 @@ pub struct WorldInfo {
     pub name: String,
     pub preset: WorldGenPreset,
     pub player_position: Option<Vec2>, // THIS IS IN BLOCK UNITS!!!
-    pub is_flying: bool
+    pub is_flying: bool,
 }
+
+#[derive(Resource, Deref, DerefMut)]
+pub struct PlayerInventory(pub ItemContainer);
 
 #[derive(Component)]
 struct BlockCursor {
@@ -59,11 +66,12 @@ impl Plugin for WorldPlugin {
             name: "".to_string(),
             preset: WorldGenPreset::default(),
             player_position: None,
-            is_flying: false
+            is_flying: false,
         })
+        .insert_resource(PlayerInventory(ItemContainer::new(3, 10)))
         .insert_resource(Gravity(Vec2::NEG_Y * (9.81 * TILE_SIZE as f32)))
         .register_type::<WorldInfo>()
-        .add_plugins((ChunkManagerPlugin, PlayerPlugin, PauseMenuPlugin))
+        .add_plugins((ChunkManagerPlugin, PlayerPlugin, PauseMenuPlugin, InventoryWidgetPlugin))
         .add_systems(
             OnEnter(GameState::Game),
             (config_camera, setup, setup_sky_bg)
@@ -117,6 +125,7 @@ fn setup(
     mut commands: Commands,
     asset_server: Res<AssetServer>,
     mut texture_atlas_layouts: ResMut<Assets<TextureAtlasLayout>>,
+    mut inventory_res: ResMut<PlayerInventory>,
 ) {
     commands.spawn((
         Name::new("Cursor"),
@@ -193,6 +202,15 @@ fn setup(
                 },
                 CursorPlaceModeIcon,
             ));
+        });
+
+    inventory_res.set_item(1, 1, Some(ItemStack {item: Item::TEST, amount: 1}));
+
+    commands
+        .ui_builder(UiRoot)
+        .container(NodeBundle { ..default() }, |gr| {
+            gr.named("Inventory");
+            gr.inventory(&inventory_res);
         });
 }
 

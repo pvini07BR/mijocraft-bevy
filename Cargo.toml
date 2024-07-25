@@ -22,6 +22,7 @@ serde-big-array = "0.5.1"
 sickle_ui = { git = "https://github.com/dead-money/sickle_ui" }
 toml = "0.8.14"
 rand = "0.8.5"
+futures-util = "0.3.30"
 
 # Enable a small amount of optimization in debug mode
 [profile.dev]
