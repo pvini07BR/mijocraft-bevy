@@ -24,6 +24,7 @@ use rand::{rngs::StdRng, Rng, SeedableRng};
 use crate::{
     chunk_manager::Chunks,
     utils::{
+        greedy-meshing
         get_global_position, get_neighboring_blocks_with_corners, get_neighboring_lights,
         get_neighboring_lights_with_corners, get_position_from_index,
     },
@@ -311,7 +312,6 @@ fn remesh(
                             if !neighbors[1].is_transparent() {
                                 vertex_colors[i * VERTICES_PER_BLOCK + 0] = ao_color;
                                 vertex_colors[i * VERTICES_PER_BLOCK + 1] = ao_color;
-                                //flip_quad(i, &mut indices);
                             }
 
                             // Right

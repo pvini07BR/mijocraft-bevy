@@ -38,8 +38,8 @@ impl PlayerSettingsWidgetExt for UiBuilder<'_, Entity> {
                     (
                         NodeBundle {
                             style: Style {
-                                min_width: Val::Px(72.0),
                                 height: Val::Percent(100.0),
+                                aspect_ratio: Some(1.0),
                                 ..default()
                             },
                             background_color: player_settings_res.color.into(),
